@@ -1,0 +1,470 @@
+@prefix : <https://example.org/f1-ontology/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix sulo: <https://w3id.org/sulo/> .
+
+<https://w3id.org/sulo/schema/resource/ontology-schema/77efd856-e7fb-408d-9cc3-a759705ef3dd>
+    a owl:Ontology ;
+    dct:title "Formula 1 World Championship Hybrid Model" ;
+    dct:description "A F1 World championship dataset from: https://www.kaggle.com/datasets/atharvranjan/formula-1-world-championship-1950-present" ;
+    owl:imports <https://w3id.org/sulo/> .
+
+# ── Classes ──────────────────────────────────────────────────────────────
+
+:BestLapTime
+    a owl:Class ;
+    rdfs:label "best lap time" ;
+    rdfs:comment "The driver's best recorded lap duration during a session." ;
+    rdfs:subClassOf sulo:Duration .
+
+:BirthDate
+    a owl:Class ;
+    rdfs:label "birth date" ;
+    rdfs:comment "The date of birth of a driver." ;
+    rdfs:subClassOf sulo:TimeInstant .
+
+:Circuit
+    a owl:Class ;
+    rdfs:label "circuit" ;
+    rdfs:comment "A physical racing circuit at which a Formula 1 race takes place." ;
+    rdfs:subClassOf sulo:SpatialObject .
+
+:Driver
+    a owl:Class ;
+    rdfs:label "driver" ;
+    rdfs:comment "A person competing as a Formula 1 driver." ;
+    rdfs:subClassOf sulo:SpatialObject .
+
+:DriverRole
+    a owl:Class ;
+    rdfs:label "driver role" ;
+    rdfs:comment "The role played by a driver in a race entry." ;
+    rdfs:subClassOf sulo:Role .
+
+:FinishPosition
+    a owl:Class ;
+    rdfs:label "finish position" ;
+    rdfs:comment "The driver's final classified position in a race." ;
+    rdfs:subClassOf sulo:Quantity .
+
+:LapsCompleted
+    a owl:Class ;
+    rdfs:label "laps completed" ;
+    rdfs:comment "The number of race laps completed by a driver." ;
+    rdfs:subClassOf sulo:Quantity .
+
+:PermanentNumber
+    a owl:Class ;
+    rdfs:label "permanent number" ;
+    rdfs:comment "The permanent racing number associated with a driver." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:Race
+    a owl:Class ;
+    rdfs:label "race" ;
+    rdfs:comment "A Formula 1 Grand Prix held as part of a championship season." ;
+    rdfs:subClassOf sulo:Process .
+
+:RaceDate
+    a owl:Class ;
+    rdfs:label "race date" ;
+    rdfs:comment "The date on which a race takes place." ;
+    rdfs:subClassOf sulo:TimeInstant .
+
+:RaceEntry
+    a owl:Class ;
+    rdfs:label "race entry" ;
+    rdfs:comment "The participation and resulting performance of one driver, representing one team, in one race." ;
+    rdfs:subClassOf sulo:Process .
+
+:RacePoints
+    a owl:Class ;
+    rdfs:label "race points" ;
+    rdfs:comment "Championship points scored by a driver in a race." ;
+    rdfs:subClassOf sulo:Quantity .
+
+:RaceStatus
+    a owl:Class ;
+    rdfs:label "race status" ;
+    rdfs:comment "The status describing how a driver's race ended." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:RoundNumber
+    a owl:Class ;
+    rdfs:label "round number" ;
+    rdfs:comment "The race's round number within a championship season." ;
+    rdfs:subClassOf sulo:Quantity .
+
+:Season
+    a owl:Class ;
+    rdfs:label "season" ;
+    rdfs:comment "A Formula 1 championship season consisting of a sequence of races." ;
+    rdfs:subClassOf sulo:Process .
+
+:SeasonYear
+    a owl:Class ;
+    rdfs:label "season year" ;
+    rdfs:comment "The year represented by a championship season." ;
+    rdfs:subClassOf sulo:TimeInterval .
+
+:SessionLapsCompleted
+    a owl:Class ;
+    rdfs:label "session laps completed" ;
+    rdfs:comment "The number of laps completed during a session." ;
+    rdfs:subClassOf sulo:Quantity .
+
+:SessionPoints
+    a owl:Class ;
+    rdfs:label "session points" ;
+    rdfs:comment "Championship points scored during a session when applicable." ;
+    rdfs:subClassOf sulo:Quantity .
+
+:SessionPosition
+    a owl:Class ;
+    rdfs:label "session position" ;
+    rdfs:comment "The driver's classified or ranked position in a session." ;
+    rdfs:subClassOf sulo:Quantity .
+
+:SessionResult
+    a owl:Class ;
+    rdfs:label "session result" ;
+    rdfs:comment "A driver's performance in a non-race session associated with a race weekend, such as practice, qualifying, or sprint." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:SessionType
+    a owl:Class ;
+    rdfs:label "session type" ;
+    rdfs:comment "The type of session, such as practice, qualifying, or sprint." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:StartPosition
+    a owl:Class ;
+    rdfs:label "start position" ;
+    rdfs:comment "The driver's starting grid position for a race." ;
+    rdfs:subClassOf sulo:Quantity .
+
+:Team
+    a owl:Class ;
+    rdfs:label "team" ;
+    rdfs:comment "A Formula 1 team for which drivers compete." ;
+    rdfs:subClassOf sulo:SpatialObject .
+
+:TeamRole
+    a owl:Class ;
+    rdfs:label "team role" ;
+    rdfs:comment "The role played by a team in a race entry." ;
+    rdfs:subClassOf sulo:Role .
+
+# ── Properties ───────────────────────────────────────────────────────────
+
+:hasBestLapTime
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has best lap time" ;
+    rdfs:comment "Specifies the driver's best recorded lap time during the session, measured in seconds." ;
+    rdfs:domain <https://example.org/f1-ontology/SessionResult_hasBestLapTime_domain> ;
+    rdfs:range xsd:decimal .
+
+:hasCircuitName
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has circuit name" ;
+    rdfs:comment "Specifies the name of the racing circuit." ;
+    rdfs:domain <https://example.org/f1-ontology/Circuit_hasCircuitName_domain> ;
+    rdfs:range xsd:string .
+
+:hasCountry
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has country" ;
+    rdfs:comment "Specifies the country in which the circuit is located." ;
+    rdfs:domain <https://example.org/f1-ontology/Circuit_hasCountry_domain> ;
+    rdfs:range xsd:string .
+
+:hasDateOfBirth
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has date of birth" ;
+    rdfs:comment "Specifies the driver's date of birth." ;
+    rdfs:domain <https://example.org/f1-ontology/Driver_hasDateOfBirth_domain> ;
+    rdfs:range xsd:date .
+
+:hasDriver
+    a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:label "has driver" ;
+    rdfs:comment "Associates a race entry with the driver participating in the race." ;
+    rdfs:domain <https://example.org/f1-ontology/RaceEntry_hasDriver_domain> ;
+    rdfs:range <https://example.org/f1-ontology/RaceEntry_hasDriver_range> .
+
+:hasDriverName
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has driver name" ;
+    rdfs:comment "Specifies the full name of the driver." ;
+    rdfs:domain <https://example.org/f1-ontology/Driver_hasDriverName_domain> ;
+    rdfs:range xsd:string .
+
+:hasFinishPosition
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has finish position" ;
+    rdfs:comment "Specifies the driver's final classified position in the race, when applicable." ;
+    rdfs:domain <https://example.org/f1-ontology/RaceEntry_hasFinishPosition_domain> ;
+    rdfs:range xsd:integer .
+
+:hasLapsCompleted
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has laps completed" ;
+    rdfs:comment "Specifies the number of race laps completed by the driver." ;
+    rdfs:domain <https://example.org/f1-ontology/RaceEntry_hasLapsCompleted_domain> ;
+    rdfs:range xsd:integer .
+
+:hasLocation
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has location" ;
+    rdfs:comment "Specifies the city or locality in which the circuit is located." ;
+    rdfs:domain <https://example.org/f1-ontology/Circuit_hasLocation_domain> ;
+    rdfs:range xsd:string .
+
+:hasNationality
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has nationality" ;
+    rdfs:comment "Specifies the driver's nationality." ;
+    rdfs:domain <https://example.org/f1-ontology/Driver_hasNationality_domain> ;
+    rdfs:range xsd:string .
+
+:hasPermanentNumber
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has permanent number" ;
+    rdfs:comment "Specifies the permanent racing number associated with the driver." ;
+    rdfs:domain <https://example.org/f1-ontology/Driver_hasPermanentNumber_domain> ;
+    rdfs:range xsd:integer .
+
+:hasPosition
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has position" ;
+    rdfs:comment "Specifies the driver's classified or ranked position in the session." ;
+    rdfs:domain <https://example.org/f1-ontology/SessionResult_hasPosition_domain> ;
+    rdfs:range xsd:integer .
+
+:hasRaceDate
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has race date" ;
+    rdfs:comment "Specifies the date on which the race takes place." ;
+    rdfs:domain <https://example.org/f1-ontology/Race_hasRaceDate_domain> ;
+    rdfs:range xsd:date .
+
+:hasRaceEntry
+    a owl:ObjectProperty ;
+    rdfs:label "has race entry" ;
+    rdfs:comment "Associates a race with a driver's participation and result in that race." ;
+    rdfs:domain <https://example.org/f1-ontology/Race_hasRaceEntry_domain> ;
+    rdfs:range <https://example.org/f1-ontology/Race_hasRaceEntry_range> .
+
+:hasRaceName
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has race name" ;
+    rdfs:comment "Specifies the official name of the race." ;
+    rdfs:domain <https://example.org/f1-ontology/Race_hasRaceName_domain> ;
+    rdfs:range xsd:string .
+
+:hasRacePoints
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has race points" ;
+    rdfs:comment "Specifies the championship points scored by the driver in the race." ;
+    rdfs:domain <https://example.org/f1-ontology/RaceEntry_hasRacePoints_domain> ;
+    rdfs:range xsd:decimal .
+
+:hasRound
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has round" ;
+    rdfs:comment "Specifies the race's round number within the championship season." ;
+    rdfs:domain <https://example.org/f1-ontology/Race_hasRound_domain> ;
+    rdfs:range xsd:integer .
+
+:hasSessionLapsCompleted
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has session laps completed" ;
+    rdfs:comment "Specifies the number of laps completed during the session when available." ;
+    rdfs:domain <https://example.org/f1-ontology/SessionResult_hasSessionLapsCompleted_domain> ;
+    rdfs:range xsd:integer .
+
+:hasSessionPoints
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has session points" ;
+    rdfs:comment "Specifies the championship points scored during the session when applicable." ;
+    rdfs:domain <https://example.org/f1-ontology/SessionResult_hasSessionPoints_domain> ;
+    rdfs:range xsd:decimal .
+
+:hasSessionResult
+    a owl:ObjectProperty ;
+    rdfs:label "has session result" ;
+    rdfs:comment "Associates a race entry with a practice, qualifying, or sprint performance from the same race weekend." ;
+    rdfs:domain <https://example.org/f1-ontology/RaceEntry_hasSessionResult_domain> ;
+    rdfs:range <https://example.org/f1-ontology/RaceEntry_hasSessionResult_range> .
+
+:hasSessionType
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has session type" ;
+    rdfs:comment "Specifies whether the performance occurred during practice, qualifying, or sprint." ;
+    rdfs:domain <https://example.org/f1-ontology/SessionResult_hasSessionType_domain> ;
+    rdfs:range xsd:string .
+
+:hasStartPosition
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has start position" ;
+    rdfs:comment "Specifies the driver's starting grid position for the race." ;
+    rdfs:domain <https://example.org/f1-ontology/RaceEntry_hasStartPosition_domain> ;
+    rdfs:range xsd:integer .
+
+:hasStatus
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has status" ;
+    rdfs:comment "Describes how the driver's race ended, such as finished, retired, or disqualified." ;
+    rdfs:domain <https://example.org/f1-ontology/RaceEntry_hasStatus_domain> ;
+    rdfs:range xsd:string .
+
+:hasTeam
+    a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:label "has team" ;
+    rdfs:comment "Associates a race entry with the team represented by the driver." ;
+    rdfs:domain <https://example.org/f1-ontology/RaceEntry_hasTeam_domain> ;
+    rdfs:range <https://example.org/f1-ontology/RaceEntry_hasTeam_range> .
+
+:hasTeamName
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has team name" ;
+    rdfs:comment "Specifies the name of the Formula 1 team." ;
+    rdfs:domain <https://example.org/f1-ontology/Team_hasTeamName_domain> ;
+    rdfs:range xsd:string .
+
+:hasTeamNationality
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has team nationality" ;
+    rdfs:comment "Specifies the nationality associated with the Formula 1 team." ;
+    rdfs:domain <https://example.org/f1-ontology/Team_hasTeamNationality_domain> ;
+    rdfs:range xsd:string .
+
+:hasYear
+    a owl:DatatypeProperty, owl:FunctionalProperty ;
+    rdfs:label "has year" ;
+    rdfs:comment "Specifies the championship year represented by the season." ;
+    rdfs:domain <https://example.org/f1-ontology/Season_hasYear_domain> ;
+    rdfs:range xsd:integer .
+
+:heldAtCircuit
+    a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:label "held at circuit" ;
+    rdfs:comment "Associates a race with the circuit at which it takes place." ;
+    rdfs:domain <https://example.org/f1-ontology/Race_heldAtCircuit_domain> ;
+    rdfs:range <https://example.org/f1-ontology/Race_heldAtCircuit_range> .
+
+:partOfSeason
+    a owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:label "part of season" ;
+    rdfs:comment "Associates a race with the championship season in which it occurs." ;
+    rdfs:domain <https://example.org/f1-ontology/Race_partOfSeason_domain> ;
+    rdfs:range <https://example.org/f1-ontology/Race_partOfSeason_range> .
+
+# ── Domain / Range class expressions (OWL equivalent axioms) ──────────────
+
+<https://example.org/f1-ontology/SessionResult_hasBestLapTime_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :SessionResult [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :BestLapTime [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:decimal ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Circuit_hasCircuitName_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Circuit [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( sulo:InformationObject [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Circuit_hasCountry_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Circuit [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( sulo:InformationObject [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Driver_hasDateOfBirth_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Driver [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :BirthDate [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:date ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasDriver_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :RaceEntry [ a owl:Restriction ; owl:onProperty sulo:hasParticipant ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :DriverRole [ a owl:Restriction ; owl:onProperty sulo:isFeatureOf ; owl:someValuesFrom :Driver ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasDriver_range>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Driver [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:isFeatureOf ] ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :DriverRole [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasParticipant ] ; owl:someValuesFrom :RaceEntry ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Driver_hasDriverName_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Driver [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( sulo:InformationObject [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasFinishPosition_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :RaceEntry [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :FinishPosition [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasLapsCompleted_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :RaceEntry [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :LapsCompleted [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Circuit_hasLocation_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Circuit [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( sulo:InformationObject [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Driver_hasNationality_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Driver [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( sulo:InformationObject [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Driver_hasPermanentNumber_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Driver [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :PermanentNumber [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/SessionResult_hasPosition_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :SessionResult [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :SessionPosition [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Race_hasRaceDate_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Race [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :RaceDate [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:date ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Race_hasRaceEntry_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Race [ a owl:Restriction ; owl:onProperty sulo:hasPart ; owl:someValuesFrom :RaceEntry ] ) ] .
+
+<https://example.org/f1-ontology/Race_hasRaceEntry_range>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :RaceEntry [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasPart ] ; owl:someValuesFrom :Race ] ) ] .
+
+<https://example.org/f1-ontology/Race_hasRaceName_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Race [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( sulo:InformationObject [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasRacePoints_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :RaceEntry [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :RacePoints [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:decimal ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Race_hasRound_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Race [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :RoundNumber [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/SessionResult_hasSessionLapsCompleted_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :SessionResult [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :SessionLapsCompleted [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/SessionResult_hasSessionPoints_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :SessionResult [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :SessionPoints [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:decimal ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasSessionResult_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :RaceEntry [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom :SessionResult ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasSessionResult_range>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :SessionResult [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:isReferredToIn ] ; owl:someValuesFrom :RaceEntry ] ) ] .
+
+<https://example.org/f1-ontology/SessionResult_hasSessionType_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :SessionResult [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :SessionType [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasStartPosition_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :RaceEntry [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :StartPosition [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasStatus_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :RaceEntry [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :RaceStatus [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasTeam_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :RaceEntry [ a owl:Restriction ; owl:onProperty sulo:hasParticipant ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :TeamRole [ a owl:Restriction ; owl:onProperty sulo:isFeatureOf ; owl:someValuesFrom :Team ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/RaceEntry_hasTeam_range>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Team [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:isFeatureOf ] ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :TeamRole [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasParticipant ] ; owl:someValuesFrom :RaceEntry ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Team_hasTeamName_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Team [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( sulo:InformationObject [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Team_hasTeamNationality_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Team [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( sulo:InformationObject [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Season_hasYear_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Season [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :SeasonYear [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://example.org/f1-ontology/Race_heldAtCircuit_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Race [ a owl:Restriction ; owl:onProperty sulo:isIn ; owl:someValuesFrom :Circuit ] ) ] .
+
+<https://example.org/f1-ontology/Race_heldAtCircuit_range>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Circuit [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:isIn ] ; owl:someValuesFrom :Race ] ) ] .
+
+<https://example.org/f1-ontology/Race_partOfSeason_domain>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Race [ a owl:Restriction ; owl:onProperty sulo:isPartOf ; owl:someValuesFrom :Season ] ) ] .
+
+<https://example.org/f1-ontology/Race_partOfSeason_range>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Season [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:isPartOf ] ; owl:someValuesFrom :Race ] ) ] .

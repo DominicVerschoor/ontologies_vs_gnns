@@ -1,0 +1,4 @@
+model,schema,phase,hidden_dim,val_mrr,runtime_sec,status,test_mrr_pooled
+GraphSAGE,base,search,32,0.028447713733748423,1801.7345712184906,ok,
+GraphSAGE,base,search,64,0.02694679682005542,2248.6317224502563,ok,
+GraphSAGE,base,final_test,32,0.028447713733748423,,ok,0.004662154714130861

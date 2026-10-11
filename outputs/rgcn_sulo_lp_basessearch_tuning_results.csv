@@ -1,0 +1,5 @@
+model,schema,phase,num_bases,dim,val_mrr,runtime_sec,status,test_mrr_pooled
+RGCN,sulo,secondary_num_bases,2,32,0.008349078933158968,915.788134098053,ok,
+RGCN,sulo,secondary_num_bases,4,32,0.023584732847218796,917.7363538742065,ok,
+RGCN,sulo,secondary_num_bases,7,32,0.0166715505279631,2097.090737104416,ok,
+RGCN,sulo,final_test,4,32,0.023584732847218796,,ok,0.0015470625730279392

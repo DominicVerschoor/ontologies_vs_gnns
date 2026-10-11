@@ -1,0 +1,5 @@
+model,schema,phase,neg_per_pos,dim,val_mrr,runtime_sec,status,test_mrr_pooled
+RGCN,base,secondary_neg_per_pos,1,32,0.02876993464244136,2137.97203040123,ok,
+RGCN,base,secondary_neg_per_pos,4,32,0.028745092789716844,3818.1625208854675,ok,
+RGCN,base,secondary_neg_per_pos,10,32,0.024380547361705182,4505.853984117508,ok,
+RGCN,base,final_test,1,32,0.02876993464244136,,ok,0.004935571000626224

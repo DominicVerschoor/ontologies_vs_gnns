@@ -1,0 +1,252 @@
+@prefix : <https://example.org/f1-ontology/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix sulo: <https://w3id.org/sulo/> .
+
+<https://w3id.org/sulo/schema/resource/ontology-schema/9deefb76-e774-4bc4-8276-97911e64f5db>
+    dct:title "Formula 1 World Championship Pure Model" ;
+    dct:description "A F1 World championship dataset from: https://www.kaggle.com/datasets/atharvranjan/formula-1-world-championship-1950-present" ;
+    rdfs:seeAlso <https://w3id.org/sulo/> .
+
+# ── Classes ──────────────────────────────────────────────────────────────
+
+:Circuit
+    a rdfs:Class ;
+    rdfs:label "circuit" ;
+    rdfs:comment "A physical racing circuit at which a Formula 1 race takes place." .
+
+:Driver
+    a rdfs:Class ;
+    rdfs:label "driver" ;
+    rdfs:comment "A person competing as a Formula 1 driver." .
+
+:Race
+    a rdfs:Class ;
+    rdfs:label "race" ;
+    rdfs:comment "A Formula 1 Grand Prix held as part of a championship season." .
+
+:RaceEntry
+    a rdfs:Class ;
+    rdfs:label "race entry" ;
+    rdfs:comment "The participation and resulting performance of one driver, representing one team, in one race." .
+
+:Season
+    a rdfs:Class ;
+    rdfs:label "season" ;
+    rdfs:comment "A Formula 1 championship season consisting of a sequence of races." .
+
+:SessionResult
+    a rdfs:Class ;
+    rdfs:label "session result" ;
+    rdfs:comment "A driver's performance in a non-race session associated with a race weekend, such as practice, qualifying, or sprint." .
+
+:Team
+    a rdfs:Class ;
+    rdfs:label "team" ;
+    rdfs:comment "A Formula 1 team for which drivers compete." .
+
+# ── Properties ───────────────────────────────────────────────────────────
+
+:hasBestLapTime
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has best lap time" ;
+    rdfs:comment "Specifies the driver's best recorded lap time during the session, measured in seconds." ;
+    rdfs:domain :SessionResult ;
+    rdfs:range xsd:decimal .
+
+:hasCircuitName
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has circuit name" ;
+    rdfs:comment "Specifies the name of the racing circuit." ;
+    rdfs:domain :Circuit ;
+    rdfs:range xsd:string .
+
+:hasCountry
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has country" ;
+    rdfs:comment "Specifies the country in which the circuit is located." ;
+    rdfs:domain :Circuit ;
+    rdfs:range xsd:string .
+
+:hasDateOfBirth
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has date of birth" ;
+    rdfs:comment "Specifies the driver's date of birth." ;
+    rdfs:domain :Driver ;
+    rdfs:range xsd:date .
+
+:hasDriver
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has driver" ;
+    rdfs:comment "Associates a race entry with the driver participating in the race." ;
+    rdfs:domain :RaceEntry ;
+    rdfs:range :Driver .
+
+:hasDriverName
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has driver name" ;
+    rdfs:comment "Specifies the full name of the driver." ;
+    rdfs:domain :Driver ;
+    rdfs:range xsd:string .
+
+:hasFinishPosition
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has finish position" ;
+    rdfs:comment "Specifies the driver's final classified position in the race, when applicable." ;
+    rdfs:domain :RaceEntry ;
+    rdfs:range xsd:integer .
+
+:hasLapsCompleted
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has laps completed" ;
+    rdfs:comment "Specifies the number of race laps completed by the driver." ;
+    rdfs:domain :RaceEntry ;
+    rdfs:range xsd:integer .
+
+:hasLocation
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has location" ;
+    rdfs:comment "Specifies the city or locality in which the circuit is located." ;
+    rdfs:domain :Circuit ;
+    rdfs:range xsd:string .
+
+:hasNationality
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has nationality" ;
+    rdfs:comment "Specifies the driver's nationality." ;
+    rdfs:domain :Driver ;
+    rdfs:range xsd:string .
+
+:hasPermanentNumber
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has permanent number" ;
+    rdfs:comment "Specifies the permanent racing number associated with the driver." ;
+    rdfs:domain :Driver ;
+    rdfs:range xsd:integer .
+
+:hasPosition
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has position" ;
+    rdfs:comment "Specifies the driver's classified or ranked position in the session." ;
+    rdfs:domain :SessionResult ;
+    rdfs:range xsd:integer .
+
+:hasRaceDate
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has race date" ;
+    rdfs:comment "Specifies the date on which the race takes place." ;
+    rdfs:domain :Race ;
+    rdfs:range xsd:date .
+
+:hasRaceEntry
+    a rdfs:Property ;
+    rdfs:label "has race entry" ;
+    rdfs:comment "Associates a race with a driver's participation and result in that race." ;
+    rdfs:domain :Race ;
+    rdfs:range :RaceEntry .
+
+:hasRaceName
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has race name" ;
+    rdfs:comment "Specifies the official name of the race." ;
+    rdfs:domain :Race ;
+    rdfs:range xsd:string .
+
+:hasRacePoints
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has race points" ;
+    rdfs:comment "Specifies the championship points scored by the driver in the race." ;
+    rdfs:domain :RaceEntry ;
+    rdfs:range xsd:decimal .
+
+:hasRound
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has round" ;
+    rdfs:comment "Specifies the race's round number within the championship season." ;
+    rdfs:domain :Race ;
+    rdfs:range xsd:integer .
+
+:hasSessionLapsCompleted
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has session laps completed" ;
+    rdfs:comment "Specifies the number of laps completed during the session when available." ;
+    rdfs:domain :SessionResult ;
+    rdfs:range xsd:integer .
+
+:hasSessionPoints
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has session points" ;
+    rdfs:comment "Specifies the championship points scored during the session when applicable." ;
+    rdfs:domain :SessionResult ;
+    rdfs:range xsd:decimal .
+
+:hasSessionResult
+    a rdfs:Property ;
+    rdfs:label "has session result" ;
+    rdfs:comment "Associates a race entry with a practice, qualifying, or sprint performance from the same race weekend." ;
+    rdfs:domain :RaceEntry ;
+    rdfs:range :SessionResult .
+
+:hasSessionType
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has session type" ;
+    rdfs:comment "Specifies whether the performance occurred during practice, qualifying, or sprint." ;
+    rdfs:domain :SessionResult ;
+    rdfs:range xsd:string .
+
+:hasStartPosition
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has start position" ;
+    rdfs:comment "Specifies the driver's starting grid position for the race." ;
+    rdfs:domain :RaceEntry ;
+    rdfs:range xsd:integer .
+
+:hasStatus
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has status" ;
+    rdfs:comment "Describes how the driver's race ended, such as finished, retired, or disqualified." ;
+    rdfs:domain :RaceEntry ;
+    rdfs:range xsd:string .
+
+:hasTeam
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has team" ;
+    rdfs:comment "Associates a race entry with the team represented by the driver." ;
+    rdfs:domain :RaceEntry ;
+    rdfs:range :Team .
+
+:hasTeamName
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has team name" ;
+    rdfs:comment "Specifies the name of the Formula 1 team." ;
+    rdfs:domain :Team ;
+    rdfs:range xsd:string .
+
+:hasTeamNationality
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has team nationality" ;
+    rdfs:comment "Specifies the nationality associated with the Formula 1 team." ;
+    rdfs:domain :Team ;
+    rdfs:range xsd:string .
+
+:hasYear
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has year" ;
+    rdfs:comment "Specifies the championship year represented by the season." ;
+    rdfs:domain :Season ;
+    rdfs:range xsd:integer .
+
+:heldAtCircuit
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "held at circuit" ;
+    rdfs:comment "Associates a race with the circuit at which it takes place." ;
+    rdfs:domain :Race ;
+    rdfs:range :Circuit .
+
+:partOfSeason
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "part of season" ;
+    rdfs:comment "Associates a race with the championship season in which it occurs." ;
+    rdfs:domain :Race ;
+    rdfs:range :Season .

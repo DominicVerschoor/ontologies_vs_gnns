@@ -1,0 +1,330 @@
+@prefix : <https://w3id.org/sulo/schema/resource/ontology-schema/29dbbab2-7fa8-458c-a7d6-a973aebced40/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+
+<https://w3id.org/sulo/schema/resource/ontology-schema/29dbbab2-7fa8-458c-a7d6-a973aebced40>
+    dct:title "" ;
+    dct:description "Basic Knowledge Graph based on for customer satisfaction prediction." .
+
+# ── Classes ──────────────────────────────────────────────────────────────
+
+:Account
+    a rdfs:Class ;
+    rdfs:comment "Serves as a collection entity that incorporates account attributes and refers directly to the customer." .
+
+:AccountType
+    a rdfs:Class ;
+    rdfs:comment "Classification between a business or personal account." .
+
+:Brand
+    a rdfs:Class ;
+    rdfs:comment "The brand of the car in the case." .
+
+:Case
+    a rdfs:Class ;
+    rdfs:comment "Unique Salesforce case which encompasses the main information that is being predicted." .
+
+:CaseClosureType
+    a rdfs:Class ;
+    rdfs:comment "The method or reason the case has been closed." .
+
+:CaseModification
+    a rdfs:Class ;
+    rdfs:comment "Represents the operational process wherein data associated with the case undergoes specific changes." .
+
+:CaseReason
+    a rdfs:Class ;
+    rdfs:comment "The short summary for why the case took place." .
+
+:CaseStatus
+    a rdfs:Class ;
+    rdfs:comment "The current status of the case" .
+
+:CaseType
+    a rdfs:Class ;
+    rdfs:comment "Defines what type of case this is." .
+
+:Country
+    a rdfs:Class ;
+    rdfs:comment "The country the case took place in." .
+
+:Language
+    a rdfs:Class ;
+    rdfs:comment "The language spoken during the case." .
+
+:PriorityLevel
+    a rdfs:Class ;
+    rdfs:comment " designated quality denoting the urgency or importance of the task or case." .
+
+:ProductGroup
+    a rdfs:Class ;
+    rdfs:comment "The group which created the vehicle." .
+
+:ServiceType
+    a rdfs:Class ;
+    rdfs:comment "Classifies the service category referring explicitly to the case entity." .
+
+:SupportLevel
+    a rdfs:Class ;
+    rdfs:comment "Classifying the tier of assistance required for the case." .
+
+:SurveyRating
+    a rdfs:Class ;
+    rdfs:comment "The survey response score for the case from a scale of 1-5." .
+
+:Task
+    a rdfs:Class ;
+    rdfs:comment "Represents a distinct operational process or action executing within the case scope." .
+
+:TaskType
+    a rdfs:Class ;
+    rdfs:comment "A classification for the task being completed" .
+
+:Vehicle
+    a rdfs:Class ;
+    rdfs:comment "Represents the physical automobile entity modeled within the spatial domain." .
+
+:VehicleClass
+    a rdfs:Class ;
+    rdfs:comment "Defines the class categorization of the vehicle." .
+
+:VehicleSeries
+    a rdfs:Class ;
+    rdfs:comment "The production series of the vehicle." .
+
+# ── Properties ───────────────────────────────────────────────────────────
+
+:hasAccount
+    a rdfs:Property ;
+    rdfs:comment "Links the case to the respective account." ;
+    rdfs:domain :Case ;
+    rdfs:range :Account .
+
+:hasAccountLastModifiedDate
+    a rdfs:Property ;
+    rdfs:comment "Specifies the time when the account was most recently altered." ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:dateTime .
+
+:hasAccountType
+    a rdfs:Property ;
+    rdfs:comment "Defines if the account is a personal or business account." ;
+    rdfs:domain :Account ;
+    rdfs:range :AccountType .
+
+:hasBrand
+    a rdfs:Property ;
+    rdfs:comment "Specifies the manufacturer brand designation associated with the vehicle." ;
+    rdfs:domain :Vehicle ;
+    rdfs:range :Brand .
+
+:hasCaseClosedDate
+    a rdfs:Property ;
+    rdfs:comment "Specifies the exact temporal coordinate associated with the closure of the case." ;
+    rdfs:domain :Case ;
+    rdfs:range xsd:dateTime .
+
+:hasCaseClosureType
+    a rdfs:Property ;
+    rdfs:comment "Acts as an informational object referring explicitly to the case closure process." ;
+    rdfs:domain :Case ;
+    rdfs:range :CaseClosureType .
+
+:hasCaseConversationAmount
+    a rdfs:Property ;
+    rdfs:comment "Represents the amount of conversations involved in the case." ;
+    rdfs:domain :Case ;
+    rdfs:range xsd:integer .
+
+:hasCaseDescription
+    a rdfs:Property ;
+    rdfs:comment "Provides a textual representation referring directly to the case investigation." ;
+    rdfs:domain :Case ;
+    rdfs:range xsd:string .
+
+:hasCaseHandlingTimeSec
+    a rdfs:Property ;
+    rdfs:comment "Measures the temporal duration required for handling the case investigation." ;
+    rdfs:domain :Case ;
+    rdfs:range xsd:integer .
+
+:hasCaseModification
+    a rdfs:Property ;
+    rdfs:comment "Links the case to the respective case modification." ;
+    rdfs:domain :Case ;
+    rdfs:range :CaseModification .
+
+:hasCaseReason
+    a rdfs:Property ;
+    rdfs:comment "Represents the primary justification of the case." ;
+    rdfs:domain :Case ;
+    rdfs:range :CaseReason .
+
+:hasCaseSessionAmount
+    a rdfs:Property ;
+    rdfs:comment "Represents a measurable numerical quantity denoting the number of sessions." ;
+    rdfs:domain :Case ;
+    rdfs:range xsd:integer .
+
+:hasCaseSolutionFinalStatement
+    a rdfs:Property ;
+    rdfs:comment "Statement referring to the resolution of the case investigation." ;
+    rdfs:domain :Case ;
+    rdfs:range xsd:string .
+
+:hasCaseStatus
+    a rdfs:Property ;
+    rdfs:comment "Indicating the current status of the case (is_closed_flag)." ;
+    rdfs:domain :Case ;
+    rdfs:range :CaseStatus .
+
+:hasCaseType
+    a rdfs:Property ;
+    rdfs:comment "Defines what type of case this is." ;
+    rdfs:domain :Case ;
+    rdfs:range :CaseType .
+
+:hasCountry
+    a rdfs:Property ;
+    rdfs:comment "The country the account is based in." ;
+    rdfs:domain :Account ;
+    rdfs:range :Country .
+
+:hasCreateDate
+    a rdfs:Property ;
+    rdfs:comment "Specifies the time when the creation process occurred (Account/Case)." ;
+    rdfs:domain :Case ;
+    rdfs:range xsd:dateTime .
+
+:hasLanguage
+    a rdfs:Property ;
+    rdfs:comment "The preferred language for communication with the account." ;
+    rdfs:domain :Account ;
+    rdfs:range :Language .
+
+:hasModificationDate
+    a rdfs:Property ;
+    rdfs:comment "Specifies the time when the modification took place." ;
+    rdfs:domain :CaseModification ;
+    rdfs:range xsd:dateTime .
+
+:hasModifiedField
+    a rdfs:Property ;
+    rdfs:comment "Represents the specific data field altered." ;
+    rdfs:domain :CaseModification ;
+    rdfs:range xsd:string .
+
+:hasNewValue
+    a rdfs:Property ;
+    rdfs:comment "Indicates what the updated value is in this modification." ;
+    rdfs:domain :CaseModification ;
+    rdfs:range xsd:string .
+
+:hasPreviousValue
+    a rdfs:Property ;
+    rdfs:comment "Indicates what the previous value was before it got updated." ;
+    rdfs:domain :CaseModification ;
+    rdfs:range xsd:string .
+
+:hasPriorityLevel
+    a rdfs:Property ;
+    rdfs:comment "Represents a designated quality denoting the urgency or importance of the case." ;
+    rdfs:domain :Case ;
+    rdfs:range :PriorityLevel .
+
+:hasPriorityLevel
+    a rdfs:Property ;
+    rdfs:comment "Represents a designated quality denoting the urgency or importance of the task." ;
+    rdfs:domain :Task ;
+    rdfs:range :PriorityLevel .
+
+:hasProductGroup
+    a rdfs:Property ;
+    rdfs:comment "Classifies the vehicle according to its designated product group." ;
+    rdfs:domain :Vehicle ;
+    rdfs:range :ProductGroup .
+
+:hasSalutation
+    a rdfs:Property ;
+    rdfs:comment "Represents the formal title or greeting associated with the customer account." ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:string .
+
+:hasServiceType
+    a rdfs:Property ;
+    rdfs:comment "Classifies the service category referring explicitly to the case entity." ;
+    rdfs:domain :Case ;
+    rdfs:range :ServiceType .
+
+:hasSupportLevel
+    a rdfs:Property ;
+    rdfs:comment "Represents a designated quality classifying the tier of assistance required for the case." ;
+    rdfs:domain :Case ;
+    rdfs:range :SupportLevel .
+
+:hasSurveyRating
+    a rdfs:Property ;
+    rdfs:comment "Serves as a record determining the customers satisfaction through survey." ;
+    rdfs:domain :Case ;
+    rdfs:range :SurveyRating .
+
+:hasTask
+    a rdfs:Property ;
+    rdfs:comment "Links the case to the respective tasks completed for the case." ;
+    rdfs:domain :Case ;
+    rdfs:range :Task .
+
+:hasTaskCompletedDate
+    a rdfs:Property ;
+    rdfs:comment "Specifies the time when the task process concluded." ;
+    rdfs:domain :Task ;
+    rdfs:range xsd:dateTime .
+
+:hasTaskDescription
+    a rdfs:Property ;
+    rdfs:comment "Provides a description for the task being done." ;
+    rdfs:domain :Task ;
+    rdfs:range xsd:string .
+
+:hasTaskDurationSec
+    a rdfs:Property ;
+    rdfs:comment "Measures the duration required for the execution of a task." ;
+    rdfs:domain :Task ;
+    rdfs:range xsd:integer .
+
+:hasTaskSubject
+    a rdfs:Property ;
+    rdfs:comment "Acts as an informational identifier or title referring to a specific task." ;
+    rdfs:domain :Task ;
+    rdfs:range xsd:string .
+
+:hasTaskType
+    a rdfs:Property ;
+    rdfs:comment "Defines the operational categorization referring directly to a task." ;
+    rdfs:domain :Task ;
+    rdfs:range :TaskType .
+
+:hasVehicle
+    a rdfs:Property ;
+    rdfs:comment "Links the case to the respective vehicle." ;
+    rdfs:domain :Case ;
+    rdfs:range :Vehicle .
+
+:hasVehicleClass
+    a rdfs:Property ;
+    rdfs:comment "Defines the class categorization of the vehicle." ;
+    rdfs:domain :Vehicle ;
+    rdfs:range :VehicleClass .
+
+:hasVehicleSeries
+    a rdfs:Property ;
+    rdfs:comment "Identifies the production series of the vehicle." ;
+    rdfs:domain :Vehicle ;
+    rdfs:range :VehicleSeries .
+
+:hasVehicleStructureName
+    a rdfs:Property ;
+    rdfs:comment "Functions as a composite informational entity referring to the vehicle structure." ;
+    rdfs:domain :Vehicle ;
+    rdfs:range xsd:string .

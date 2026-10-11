@@ -1,0 +1,4 @@
+model,schema,phase,hidden_dim,val_mrr,runtime_sec,status,test_mrr_pooled
+RGCN,base,search,32,0.02700688713136863,0.8493671417236328,ok,
+RGCN,base,search,64,0.02584907425120712,0.6063652038574219,ok,
+RGCN,base,final_test,32,0.02700688713136863,,ok,0.004629240653796955

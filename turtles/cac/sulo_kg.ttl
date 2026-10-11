@@ -1,0 +1,620 @@
+@prefix : <https://w3id.org/sulo/schema/resource/ontology-schema/29dbbab2-7fa8-458c-a7d6-a973aebced40/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix sulo: <https://w3id.org/sulo/> .
+
+<https://w3id.org/sulo/schema/resource/ontology-schema/29dbbab2-7fa8-458c-a7d6-a973aebced40>
+    a owl:Ontology ;
+    dct:title "CAC_Knowledge_Graph" ;
+    dct:description "Basic Knowledge Graph based on for customer satisfaction prediction." ;
+    owl:imports <https://w3id.org/sulo/> .
+
+# ── Classes ──────────────────────────────────────────────────────────────
+
+:Account
+    a owl:Class ;
+    rdfs:label "account" ;
+    rdfs:comment "Serves as a collection entity that incorporates account attributes and refers directly to the customer." ;
+    rdfs:subClassOf sulo:Collection .
+
+:AccountRole
+    a owl:Class ;
+    rdfs:label "account role" ;
+    rdfs:comment "Intermediate node for case and account." ;
+    rdfs:subClassOf sulo:Role .
+
+:AccountType
+    a owl:Class ;
+    rdfs:label "account type" ;
+    rdfs:comment "Classification between a business or personal account." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:Amount
+    a owl:Class ;
+    rdfs:label "amount" ;
+    rdfs:comment "A count defining the number of times something has occured" ;
+    rdfs:subClassOf sulo:Quantity .
+
+:Brand
+    a owl:Class ;
+    rdfs:label "brand" ;
+    rdfs:comment "The brand of the car in the case." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:Case
+    a owl:Class ;
+    rdfs:label "case" ;
+    rdfs:comment "Unique Salesforce case which encompasses the main information that is being predicted." ;
+    rdfs:subClassOf sulo:Process .
+
+:CaseClosureType
+    a owl:Class ;
+    rdfs:label "case closure type" ;
+    rdfs:comment "The method or reason the case has been closed." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:CaseModification
+    a owl:Class ;
+    rdfs:label "case modification" ;
+    rdfs:comment "Represents the operational process wherein data associated with the case undergoes specific changes." ;
+    rdfs:subClassOf sulo:Process .
+
+:CaseReason
+    a owl:Class ;
+    rdfs:label "case reason" ;
+    rdfs:comment "The short summary for why the case took place." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:CaseStatus
+    a owl:Class ;
+    rdfs:label "case status" ;
+    rdfs:comment "The current status of the case" ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:CaseType
+    a owl:Class ;
+    rdfs:label "case type" ;
+    rdfs:comment "Defines what type of case this is." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:Country
+    a owl:Class ;
+    rdfs:label "country" ;
+    rdfs:comment "The country the case took place in." ;
+    rdfs:subClassOf sulo:SpatialObject .
+
+:DurationSec
+    a owl:Class ;
+    rdfs:label "duration" ;
+    rdfs:comment "A period of time measured in seconds." ;
+    rdfs:subClassOf sulo:Duration .
+
+:Language
+    a owl:Class ;
+    rdfs:label "language" ;
+    rdfs:comment "The language spoken during the case." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:PriorityLevel
+    a owl:Class ;
+    rdfs:label "priority level" ;
+    rdfs:comment " designated quality denoting the urgency or importance of the task or case." ;
+    rdfs:subClassOf sulo:Quality .
+
+:ProductGroup
+    a owl:Class ;
+    rdfs:label "product group" ;
+    rdfs:comment "The group which created the vehicle." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:ServiceType
+    a owl:Class ;
+    rdfs:label "service type" ;
+    rdfs:comment "Classifies the service category referring explicitly to the case entity." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:SupportLevel
+    a owl:Class ;
+    rdfs:label "support level" ;
+    rdfs:comment "Classifying the tier of assistance required for the case." ;
+    rdfs:subClassOf sulo:Role .
+
+:SurveyRating
+    a owl:Class ;
+    rdfs:label "survey rating" ;
+    rdfs:comment "The survey response score for the case from a scale of 1-5." ;
+    rdfs:subClassOf sulo:Quality .
+
+:Task
+    a owl:Class ;
+    rdfs:label "task" ;
+    rdfs:comment "Represents a distinct operational process or action executing within the case scope." ;
+    rdfs:subClassOf sulo:Process .
+
+:TaskType
+    a owl:Class ;
+    rdfs:label "task type" ;
+    rdfs:comment "A classification for the task being completed" ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:TimeInstant
+    a owl:Class ;
+    rdfs:label "time instant" ;
+    rdfs:comment "A specific instance in date time." ;
+    rdfs:subClassOf sulo:TimeInstant .
+
+:Vehicle
+    a owl:Class ;
+    rdfs:label "vehicle" ;
+    rdfs:comment "Represents the physical automobile entity modeled within the spatial domain." ;
+    rdfs:subClassOf sulo:SpatialObject .
+
+:VehicleClass
+    a owl:Class ;
+    rdfs:label "vehicle class" ;
+    rdfs:comment "Defines the class categorization of the vehicle." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+:VehicleRole
+    a owl:Class ;
+    rdfs:label "vehicle role" ;
+    rdfs:comment "Intermediate node for case and vehicle." ;
+    rdfs:subClassOf sulo:Role .
+
+:VehicleSeries
+    a owl:Class ;
+    rdfs:label "vehicle series" ;
+    rdfs:comment "The production series of the vehicle." ;
+    rdfs:subClassOf sulo:InformationObject .
+
+# ── Properties ───────────────────────────────────────────────────────────
+
+:hasAccount
+    a owl:ObjectProperty ;
+    rdfs:label "has account" ;
+    rdfs:comment "Links the case to the respective account." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/cec28dd9-6f54-48e3-9668-b3bcc4512d2f> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/5dff5d3e-e839-4227-af85-65c8c8b3737e> .
+
+:hasAccountLastModifiedDate
+    a owl:DatatypeProperty ;
+    rdfs:label "has account last modified date" ;
+    rdfs:comment "Specifies the time when the account was most recently altered." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/f1db2e6f-d667-408d-bc06-35603c1340b9> ;
+    rdfs:range xsd:dateTime .
+
+:hasAccountType
+    a owl:ObjectProperty ;
+    rdfs:label "has account type" ;
+    rdfs:comment "Defines if the account is a personal or business account." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/1fd8395c-db34-4e3d-a41e-671e055dddde> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/348e1712-8858-4417-a977-bd050736b06b> .
+
+:hasBrand
+    a owl:ObjectProperty ;
+    rdfs:label "has brand" ;
+    rdfs:comment "Specifies the manufacturer brand designation associated with the vehicle." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/cd639dfb-a4f6-4453-bf59-804f5a8110fd> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/5334f498-f325-4d1e-acdf-5cf5beda2ce6> .
+
+:hasCaseClosedDate
+    a owl:DatatypeProperty ;
+    rdfs:label "has case closed date" ;
+    rdfs:comment "Specifies the exact temporal coordinate associated with the closure of the case." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/3b85a6ff-ae6e-4476-b438-362b0ef414e5> ;
+    rdfs:range xsd:dateTime .
+
+:hasCaseClosureType
+    a owl:ObjectProperty ;
+    rdfs:label "has case closure type" ;
+    rdfs:comment "Acts as an informational object referring explicitly to the case closure process." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/f4558b46-a081-406e-a242-47b2e379de9c> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/99bb4816-acbb-4483-ae48-d4d42d4d0d9d> .
+
+:hasCaseConversationAmount
+    a owl:DatatypeProperty ;
+    rdfs:label "has case conversation amount" ;
+    rdfs:comment "Represents the amount of conversations involved in the case." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/a707c0f1-ada8-42e4-afe9-d9f13cff374a> ;
+    rdfs:range xsd:integer .
+
+:hasCaseDescription
+    a owl:DatatypeProperty ;
+    rdfs:label "has case description" ;
+    rdfs:comment "Provides a textual representation referring directly to the case investigation." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/f019832d-32e6-4a97-9811-cb26227f6b34> ;
+    rdfs:range xsd:string .
+
+:hasCaseHandlingTimeSec
+    a owl:DatatypeProperty ;
+    rdfs:label "has case handling time seconds" ;
+    rdfs:comment "Measures the temporal duration required for handling the case investigation." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/24bfde9f-3112-493f-8dce-68d8cde213b9> ;
+    rdfs:range xsd:integer .
+
+:hasCaseModification
+    a owl:ObjectProperty ;
+    rdfs:label "has case modification" ;
+    rdfs:comment "Links the case to the respective case modification." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/53d770e6-8ae4-4c29-9bce-828c671d05dc> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/af23dcb5-9a58-4bdf-8c15-9329c5926014> .
+
+:hasCaseReason
+    a owl:ObjectProperty ;
+    rdfs:label "has case reason" ;
+    rdfs:comment "Represents the primary justification of the case." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/50137fbf-f492-4432-a76a-6978f6e277c2> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/49cdc21c-471e-438e-a181-b6245a70af6b> .
+
+:hasCaseSessionAmount
+    a owl:DatatypeProperty ;
+    rdfs:label "has case session amount" ;
+    rdfs:comment "Represents a measurable numerical quantity denoting the number of sessions." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/633deb2d-d7fd-4214-be04-e5342ed8460a> ;
+    rdfs:range xsd:integer .
+
+:hasCaseSolutionFinalStatement
+    a owl:DatatypeProperty ;
+    rdfs:label "has case solution final statement" ;
+    rdfs:comment "Statement referring to the resolution of the case investigation." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/f774fb73-ce48-4faa-9694-729b495f931c> ;
+    rdfs:range xsd:string .
+
+:hasCaseStatus
+    a owl:ObjectProperty ;
+    rdfs:label "has case status" ;
+    rdfs:comment "Indicating the current status of the case (is_closed_flag)." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/6125dd1e-5590-44a3-8516-6d92d92af41a> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/8b3e7178-49c9-4c7a-aac3-2539a7740fb1> .
+
+:hasCaseType
+    a owl:ObjectProperty ;
+    rdfs:label "has case type" ;
+    rdfs:comment "Defines what type of case this is." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/c71b8697-1c26-4e9b-9e59-b8a5655d54ea> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/33402ba6-62d4-451d-8835-688656822baf> .
+
+:hasCountry
+    a owl:ObjectProperty ;
+    rdfs:label "has country" ;
+    rdfs:comment "The country the account is based in." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/c3175b97-44d8-40a2-bdd6-6232bc472b35> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/ebc75854-2c99-4063-9ed4-44705abf3b02> .
+
+:hasCreateDate
+    a owl:DatatypeProperty ;
+    rdfs:label "has create date" ;
+    rdfs:comment "Specifies the time when the creation process occurred (Account/Case)." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/4bbfc5e3-036f-41b6-ba53-7f7f99f95e7b> ;
+    rdfs:range xsd:dateTime .
+
+:hasLanguage
+    a owl:ObjectProperty ;
+    rdfs:label "has language" ;
+    rdfs:comment "The preferred language for communication with the account." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/27812468-265c-47d4-b42d-310af836d481> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/ff49c02e-62a1-411b-9705-8fb38934e880> .
+
+:hasModificationDate
+    a owl:DatatypeProperty ;
+    rdfs:label "has modification date" ;
+    rdfs:comment "Specifies the time when the modification took place." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/45e20f39-7075-4aaa-812e-3bcd3c952acd> ;
+    rdfs:range xsd:dateTime .
+
+:hasModifiedField
+    a owl:DatatypeProperty ;
+    rdfs:label "has modified field" ;
+    rdfs:comment "Represents the specific data field altered." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/46052d49-e26e-4e8e-95c9-beee05452247> ;
+    rdfs:range xsd:string .
+
+:hasNewValue
+    a owl:DatatypeProperty ;
+    rdfs:label "has new value" ;
+    rdfs:comment "Indicates what the updated value is in this modification." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/81ba03a8-40c8-4c5b-859a-9ba7411297ea> ;
+    rdfs:range xsd:string .
+
+:hasPreviousValue
+    a owl:DatatypeProperty ;
+    rdfs:label "has previous value" ;
+    rdfs:comment "Indicates what the previous value was before it got updated." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/71fd158a-c57c-4fbf-b040-4e293a34f83a> ;
+    rdfs:range xsd:string .
+
+:hasPriorityLevel
+    a owl:ObjectProperty ;
+    rdfs:label "has priority level" ;
+    rdfs:comment "Represents a designated quality denoting the urgency or importance of the case or task." ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( :Case :Task ) ] ;
+    rdfs:range :PriorityLevel .
+
+:hasProductGroup
+    a owl:ObjectProperty ;
+    rdfs:label "has product group" ;
+    rdfs:comment "Classifies the vehicle according to its designated product group." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/d8f15755-a63b-4d25-b635-1deb39602b39> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/f06b989e-26bb-49a4-96df-3da78216acae> .
+
+:hasSalutation
+    a owl:DatatypeProperty ;
+    rdfs:label "has salutation" ;
+    rdfs:comment "Represents the formal title or greeting associated with the customer account." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/b1e1dd29-5a21-452a-9c6c-05376aaba18d> ;
+    rdfs:range xsd:string .
+
+:hasServiceType
+    a owl:ObjectProperty ;
+    rdfs:label "has service type" ;
+    rdfs:comment "Classifies the service category referring explicitly to the case entity." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/c2e5f0d8-9f28-4761-8ddd-5efe4b7dd311> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/cfd1cd51-f263-41fa-a091-a596ebc5fcf6> .
+
+:hasSupportLevel
+    a owl:ObjectProperty ;
+    rdfs:label "has support level" ;
+    rdfs:comment "Represents a designated quality classifying the tier of assistance required for the case." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/698630e5-2498-4159-a6e9-701d23f50ac0> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/a7e45c82-7c65-4c21-b757-8966f7f800c2> .
+
+:hasSurveyRating
+    a owl:ObjectProperty ;
+    rdfs:label "has survey rating" ;
+    rdfs:comment "Serves as a record determining the customers satisfaction through survey." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/ea998813-e5c2-424b-8784-c3bdd0a12845> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/584ff968-3988-4f66-a53b-91cb5f615678> .
+
+:hasTask
+    a owl:ObjectProperty ;
+    rdfs:label "has task" ;
+    rdfs:comment "Links the case to the respective tasks completed for the case." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/47f079be-06d6-4ec9-8bdb-0f5e4f0bfc58> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/872bdad6-f528-41cf-940f-dce90b9cb769> .
+
+:hasTaskCompletedDate
+    a owl:DatatypeProperty ;
+    rdfs:label "has task completed date" ;
+    rdfs:comment "Specifies the time when the task process concluded." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/6534d850-0a94-448e-9806-e6f87230d5f6> ;
+    rdfs:range xsd:dateTime .
+
+:hasTaskDescription
+    a owl:DatatypeProperty ;
+    rdfs:label "has task description" ;
+    rdfs:comment "Provides a description for the task being done." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/3b88e65f-723f-4c16-b367-57e5ef691689> ;
+    rdfs:range xsd:string .
+
+:hasTaskDurationSec
+    a owl:DatatypeProperty ;
+    rdfs:label "has task duration sec" ;
+    rdfs:comment "Measures the duration required for the execution of a task." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/44609670-ce70-4e41-9a23-cca67d25dc0b> ;
+    rdfs:range xsd:integer .
+
+:hasTaskSubject
+    a owl:DatatypeProperty ;
+    rdfs:label "has task subject" ;
+    rdfs:comment "Acts as an informational identifier or title referring to a specific task." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/4250a432-2a9a-4ad5-9ff5-6fdcd4ad1cea> ;
+    rdfs:range xsd:string .
+
+:hasTaskType
+    a owl:ObjectProperty ;
+    rdfs:label "has task type" ;
+    rdfs:comment "Defines the operational categorization referring directly to a task." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/4a4df605-3260-4e6c-bd0b-f09c9d4169e2> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/f1a5d492-73aa-4c29-ac98-e45cda040f71> .
+
+:hasVehicle
+    a owl:ObjectProperty ;
+    rdfs:label "has vehicle" ;
+    rdfs:comment "Links the case to the respective vehicle." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/eeda7d85-0c15-428f-9919-55099e9525d1> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/6bd4970d-478a-466f-890c-816163920d0e> .
+
+:hasVehicleClass
+    a owl:ObjectProperty ;
+    rdfs:label "has vehicle class" ;
+    rdfs:comment "Defines the class categorization of the vehicle." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/604fb47a-47e9-481c-a6e4-ba4f17fc3e71> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/fecabf26-55cd-42b6-8e0a-7b888dd523ec> .
+
+:hasVehicleSeries
+    a owl:ObjectProperty ;
+    rdfs:label "has vehicle series" ;
+    rdfs:comment "Identifies the production series of the vehicle." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/e359cca0-001f-4e2e-b394-45720ae88186> ;
+    rdfs:range <https://w3id.org/sulo/schema/resource/ontology-class/6f436617-4a6d-4e88-af9d-83d92d2b7411> .
+
+:hasVehicleStructureName
+    a owl:DatatypeProperty ;
+    rdfs:label "has vehicle structure name" ;
+    rdfs:comment "Functions as a composite informational entity referring to the vehicle structure." ;
+    rdfs:domain <https://w3id.org/sulo/schema/resource/ontology-class/e8f9002a-1bf5-4250-bb80-9489507d19bd> ;
+    rdfs:range xsd:string .
+
+# ── Domain / Range class expressions (OWL equivalent axioms) ──────────────
+
+<https://w3id.org/sulo/schema/resource/ontology-class/cec28dd9-6f54-48e3-9668-b3bcc4512d2f>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasParticipant ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :AccountRole [ a owl:Restriction ; owl:onProperty sulo:isFeatureOf ; owl:someValuesFrom :Account ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/5dff5d3e-e839-4227-af85-65c8c8b3737e>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Account [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:isFeatureOf ] ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :AccountRole [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasParticipant ] ; owl:someValuesFrom :Case ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/f1db2e6f-d667-408d-bc06-35603c1340b9>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Account [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :TimeInstant [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:dateTime ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/1fd8395c-db34-4e3d-a41e-671e055dddde>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Account [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :AccountType ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/348e1712-8858-4417-a977-bd050736b06b>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :AccountType [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Account ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/cd639dfb-a4f6-4453-bf59-804f5a8110fd>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Vehicle [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :Brand ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/5334f498-f325-4d1e-acdf-5cf5beda2ce6>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Brand [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Vehicle ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/3b85a6ff-ae6e-4476-b438-362b0ef414e5>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :TimeInstant [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:dateTime ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/f4558b46-a081-406e-a242-47b2e379de9c>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :CaseClosureType ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/99bb4816-acbb-4483-ae48-d4d42d4d0d9d>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :CaseClosureType [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/a707c0f1-ada8-42e4-afe9-d9f13cff374a>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :Amount [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/f019832d-32e6-4a97-9811-cb26227f6b34>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/24bfde9f-3112-493f-8dce-68d8cde213b9>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :DurationSec [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/53d770e6-8ae4-4c29-9bce-828c671d05dc>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasPart ; owl:someValuesFrom :CaseModification ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/af23dcb5-9a58-4bdf-8c15-9329c5926014>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :CaseModification [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasPart ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/50137fbf-f492-4432-a76a-6978f6e277c2>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom :CaseReason ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/49cdc21c-471e-438e-a181-b6245a70af6b>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :CaseReason [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:isReferredToIn ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/633deb2d-d7fd-4214-be04-e5342ed8460a>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :Amount [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/f774fb73-ce48-4faa-9694-729b495f931c>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/6125dd1e-5590-44a3-8516-6d92d92af41a>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :CaseStatus ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/8b3e7178-49c9-4c7a-aac3-2539a7740fb1>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :CaseStatus [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/c71b8697-1c26-4e9b-9e59-b8a5655d54ea>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :CaseType ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/33402ba6-62d4-451d-8835-688656822baf>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :CaseType [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/c3175b97-44d8-40a2-bdd6-6232bc472b35>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Account [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :Country ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/ebc75854-2c99-4063-9ed4-44705abf3b02>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Country [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Account ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/4bbfc5e3-036f-41b6-ba53-7f7f99f95e7b>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :TimeInstant [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:dateTime ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/27812468-265c-47d4-b42d-310af836d481>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Account [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :Language ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/ff49c02e-62a1-411b-9705-8fb38934e880>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Language [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Account ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/45e20f39-7075-4aaa-812e-3bcd3c952acd>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :CaseModification [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :TimeInstant [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:dateTime ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/46052d49-e26e-4e8e-95c9-beee05452247>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :CaseModification [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/81ba03a8-40c8-4c5b-859a-9ba7411297ea>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :CaseModification [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/71fd158a-c57c-4fbf-b040-4e293a34f83a>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :CaseModification [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/a52ca659-1bf4-49e5-af9a-246620dd9b46>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :PriorityLevel ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/7586b4cf-5d1a-4f38-aa8f-0cd88f295195>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :PriorityLevel [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/1c7aa89c-71da-4800-9c11-dec81661b4e2>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Task [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :PriorityLevel ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/97db3e3c-f393-422e-82e6-9642b3929382>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :PriorityLevel [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Task ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/d8f15755-a63b-4d25-b635-1deb39602b39>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Vehicle [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :ProductGroup ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/f06b989e-26bb-49a4-96df-3da78216acae>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :ProductGroup [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Vehicle ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/b1e1dd29-5a21-452a-9c6c-05376aaba18d>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Account [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/c2e5f0d8-9f28-4761-8ddd-5efe4b7dd311>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :ServiceType ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/cfd1cd51-f263-41fa-a091-a596ebc5fcf6>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :ServiceType [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/698630e5-2498-4159-a6e9-701d23f50ac0>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :SupportLevel ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/a7e45c82-7c65-4c21-b757-8966f7f800c2>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :SupportLevel [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/ea998813-e5c2-424b-8784-c3bdd0a12845>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :SurveyRating ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/584ff968-3988-4f66-a53b-91cb5f615678>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :SurveyRating [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/47f079be-06d6-4ec9-8bdb-0f5e4f0bfc58>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasPart ; owl:someValuesFrom :Task ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/872bdad6-f528-41cf-940f-dce90b9cb769>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Task [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasPart ] ; owl:someValuesFrom :Case ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/6534d850-0a94-448e-9806-e6f87230d5f6>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Task [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :TimeInstant [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:dateTime ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/3b88e65f-723f-4c16-b367-57e5ef691689>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Task [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/44609670-ce70-4e41-9a23-cca67d25dc0b>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Task [ a owl:Restriction ; owl:onProperty sulo:atTime ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :DurationSec [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:integer ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/4250a432-2a9a-4ad5-9ff5-6fdcd4ad1cea>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Task [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/4a4df605-3260-4e6c-bd0b-f09c9d4169e2>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Task [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :TaskType ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/f1a5d492-73aa-4c29-ac98-e45cda040f71>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :TaskType [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Task ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/eeda7d85-0c15-428f-9919-55099e9525d1>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Case [ a owl:Restriction ; owl:onProperty sulo:hasParticipant ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :VehicleRole [ a owl:Restriction ; owl:onProperty sulo:isFeatureOf ; owl:someValuesFrom :Vehicle ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/6bd4970d-478a-466f-890c-816163920d0e>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Vehicle [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:isFeatureOf ] ; owl:someValuesFrom [ a owl:Class ; owl:intersectionOf ( :VehicleRole [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasParticipant ] ; owl:someValuesFrom :Case ] ) ] ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/604fb47a-47e9-481c-a6e4-ba4f17fc3e71>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Vehicle [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :VehicleClass ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/fecabf26-55cd-42b6-8e0a-7b888dd523ec>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :VehicleClass [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Vehicle ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/e359cca0-001f-4e2e-b394-45720ae88186>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Vehicle [ a owl:Restriction ; owl:onProperty sulo:hasFeature ; owl:someValuesFrom :VehicleSeries ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/6f436617-4a6d-4e88-af9d-83d92d2b7411>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :VehicleSeries [ a owl:Restriction ; owl:onProperty [ owl:inverseOf sulo:hasFeature ] ; owl:someValuesFrom :Vehicle ] ) ] .
+
+<https://w3id.org/sulo/schema/resource/ontology-class/e8f9002a-1bf5-4250-bb80-9489507d19bd>
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( :Vehicle [ a owl:Restriction ; owl:onProperty sulo:isReferredToIn ; owl:someValuesFrom [ a owl:Restriction ; owl:onProperty sulo:hasValue ; owl:someValuesFrom xsd:string ] ] ) ] .

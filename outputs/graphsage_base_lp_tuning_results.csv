@@ -1,0 +1,5 @@
+model,schema,phase,neg_per_pos,dim,val_mrr,runtime_sec,status,test_mrr_pooled
+GraphSAGE,base,secondary_neg_per_pos,1,32,0.02735163673424755,960.1462695598602,ok,
+GraphSAGE,base,secondary_neg_per_pos,4,32,0.025457436041504522,725.4689104557037,ok,
+GraphSAGE,base,secondary_neg_per_pos,10,32,0.025335635303117773,1867.0052099227905,ok,
+GraphSAGE,base,final_test,1,32,0.02735163673424755,,ok,0.00442107252316053

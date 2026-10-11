@@ -1,0 +1,4 @@
+model,schema,phase,neg_per_pos,emb_dim,val_mrr,val_mrr_macro,best_epoch,runtime_sec,status
+TransE,base,secondary_neg_per_pos,1,32,0.022254767291448676,0.025556938207768137,15,5860.9214062690735,ok
+TransE,base,secondary_neg_per_pos,4,32,0.02287425375060625,0.026199028043254764,40,10735.631317615509,ok
+TransE,base,secondary_neg_per_pos,10,32,0.0228409820939654,0.026165028784616018,15,5848.500767230988,ok
