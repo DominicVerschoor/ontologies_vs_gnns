@@ -1,2 +1,0 @@
-phase,parameter_tested,val_roc_auc,test_roc_auc,test_accuracy,test_precision,test_f1,test_pr_auc,test_class0_f1,test_class1_f1,num_parameters,runtime_sec,status,hidden_dim,layers,neighbors,num_bases,lr,weight_decay,best_epoch
-4_Final_Test_Evaluation,unified_model,0.7174669821158497,0.6561317200322173,0.6164,0.6035337879727216,0.669993117687543,0.6406147175784533,0.5420248328557784,0.669993117687543,12112545,0.0,ok,256,2,"(25, 10)",45,0.001,1e-05,38

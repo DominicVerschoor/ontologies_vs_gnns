@@ -3,10 +3,11 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix dct: <http://purl.org/dc/terms/> .
 @prefix sulo: <https://w3id.org/sulo/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
-<https://w3id.org/sulo/schema/resource/ontology-schema/9deefb76-e774-4bc4-8276-97911e64f5db>
-    dct:title "Formula 1 World Championship Pure Model" ;
-    dct:description "A F1 World championship dataset from: https://www.kaggle.com/datasets/atharvranjan/formula-1-world-championship-1950-present" ;
+<https://w3id.org/sulo/schema/resource/ontology-schema/fbc7a68b-589e-4d38-a8a1-84d3b63a3888>
+    dct:title "Formula 1 World Championship Ad-hoc Model" ;
+    dct:description "A Formula 1 World Championship ad-hoc schema: a flat domain vocabulary in which every attribute is a direct property of its class, without SULO alignment or SULO enrichments." ;
     rdfs:seeAlso <https://w3id.org/sulo/> .
 
 # ── Classes ──────────────────────────────────────────────────────────────
@@ -20,6 +21,11 @@
     a rdfs:Class ;
     rdfs:label "driver" ;
     rdfs:comment "A person competing as a Formula 1 driver." .
+
+:Position
+    a rdfs:Class ;
+    rdfs:label "position" ;
+    rdfs:comment "An ordinal quality representing a driver's classified position within a race or session." .
 
 :Race
     a rdfs:Class ;
@@ -44,7 +50,7 @@
 :Team
     a rdfs:Class ;
     rdfs:label "team" ;
-    rdfs:comment "A Formula 1 team for which drivers compete." .
+    rdfs:comment "A Formula 1 team represented as an organizational grouping for which drivers compete." .
 
 # ── Properties ───────────────────────────────────────────────────────────
 
@@ -95,7 +101,7 @@
     rdfs:label "has finish position" ;
     rdfs:comment "Specifies the driver's final classified position in the race, when applicable." ;
     rdfs:domain :RaceEntry ;
-    rdfs:range xsd:integer .
+    rdfs:range :Position .
 
 :hasLapsCompleted
     a rdfs:Property, owl:FunctionalProperty ;
@@ -118,19 +124,12 @@
     rdfs:domain :Driver ;
     rdfs:range xsd:string .
 
-:hasPermanentNumber
-    a rdfs:Property, owl:FunctionalProperty ;
-    rdfs:label "has permanent number" ;
-    rdfs:comment "Specifies the permanent racing number associated with the driver." ;
-    rdfs:domain :Driver ;
-    rdfs:range xsd:integer .
-
 :hasPosition
     a rdfs:Property, owl:FunctionalProperty ;
     rdfs:label "has position" ;
     rdfs:comment "Specifies the driver's classified or ranked position in the session." ;
     rdfs:domain :SessionResult ;
-    rdfs:range xsd:integer .
+    rdfs:range :Position .
 
 :hasRaceDate
     a rdfs:Property, owl:FunctionalProperty ;
@@ -156,9 +155,16 @@
 :hasRacePoints
     a rdfs:Property, owl:FunctionalProperty ;
     rdfs:label "has race points" ;
-    rdfs:comment "Specifies the championship points scored by the driver in the race." ;
+    rdfs:comment "Specifies whether the driver scored championship points in the race." ;
     rdfs:domain :RaceEntry ;
-    rdfs:range xsd:decimal .
+    rdfs:range xsd:boolean .
+
+:hasRank
+    a rdfs:Property, owl:FunctionalProperty ;
+    rdfs:label "has rank" ;
+    rdfs:comment "Specifies the ordinal rank of a classified position (0 or greater, where 1 = first)." ;
+    rdfs:domain :Position ;
+    rdfs:range xsd:nonNegativeInteger .
 
 :hasRound
     a rdfs:Property, owl:FunctionalProperty ;
@@ -177,9 +183,9 @@
 :hasSessionPoints
     a rdfs:Property, owl:FunctionalProperty ;
     rdfs:label "has session points" ;
-    rdfs:comment "Specifies the championship points scored during the session when applicable." ;
+    rdfs:comment "Specifies whether the driver scored championship points in the session, when the session awards points." ;
     rdfs:domain :SessionResult ;
-    rdfs:range xsd:decimal .
+    rdfs:range xsd:boolean .
 
 :hasSessionResult
     a rdfs:Property ;
@@ -200,7 +206,7 @@
     rdfs:label "has start position" ;
     rdfs:comment "Specifies the driver's starting grid position for the race." ;
     rdfs:domain :RaceEntry ;
-    rdfs:range xsd:integer .
+    rdfs:range :Position .
 
 :hasStatus
     a rdfs:Property, owl:FunctionalProperty ;

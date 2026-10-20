@@ -1,5 +1,0 @@
-model,schema,phase,num_bases,dim,val_mrr,runtime_sec,status,test_mrr_pooled
-RGCN,base,secondary_num_bases,5,32,0.028837405249715963,3833.2410650253296,ok,
-RGCN,base,secondary_num_bases,10,32,0.026635259796445116,3821.3251979351044,ok,
-RGCN,base,secondary_num_bases,20,32,0.026445356436443,3818.5947251319885,ok,
-RGCN,base,final_test,5,32,0.028837405249715963,,ok,0.004961629697985772

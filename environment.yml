@@ -1,0 +1,10 @@
+# conda env create -f environment.yml   (or, for an existing env: conda env update -n sulo -f environment.yml)
+name: sulo
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - graphviz  # the `dot` binary used by the `graphviz` Python package
+  - pip
+  - pip:
+      - -r requirements.txt

@@ -16,3 +16,12 @@ databricks.yml
 CLAUDE.md
 
 \docs
+data/
+\outputs
+\tests
+
+pytest.ini
+.pytest_cache
+
+# F1 model checkpoints (results CSVs stay tracked)
+outputs/f1/**/*.pt

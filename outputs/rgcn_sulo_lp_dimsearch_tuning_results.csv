@@ -1,4 +1,0 @@
-model,schema,phase,hidden_dim,val_mrr,runtime_sec,status,test_mrr_pooled
-RGCN,sulo,search,32,0.021489038295314063,693.4379127025604,ok,
-RGCN,sulo,search,64,0.0064680531981133604,1.3099496364593506,ok,
-RGCN,sulo,final_test,32,0.021489038295314063,,ok,0.0013646919561002941

@@ -1,9 +1,7 @@
 import os
 import sys
-
-repo_path = '/Workspace/Users/dversch@emea.corpdir.net/.bundle/KG_Model/prod/files'
-if repo_path not in sys.path:
-    sys.path.append(repo_path)
+import random
+import contextlib
 
 import re
 import gc
@@ -31,6 +29,36 @@ def cleanup():
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+# Every validation/test pass samples its neighborhoods from this seed, so all
+# epochs, configurations and KGs are scored on identically sampled subgraphs.
+EVAL_SEED = 0
+
+# Seed nodes per NeighborLoader batch: Hamilton et al. 2017 (GraphSAGE, Appendix C) use batches of 512
+# seed nodes with (25, 10) neighbour sampling, the same node-centred minibatching as here.
+# No gradient clipping: neither Hamilton et al. 2017 nor Schlichtkrull et al. 2018 (R-GCN) clip.
+# The pre-step gradient norm is logged instead (history['grad_norm_max'], CSV column max_grad_norm).
+#   https://arxiv.org/abs/1706.02216
+#   https://arxiv.org/abs/1703.06103
+BATCH_SIZE = 512
+
+def set_seed(seed):
+    """Seeds python, numpy and torch (CPU + all CUDA devices): model init,
+    dropout, loader shuffling and NeighborLoader sampling. GPU scatter ops
+    (e.g. inside RGCNConv) can still differ in the last float bits."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+@contextlib.contextmanager
+def _eval_rng():
+    """Context for an evaluation pass: sampling is seeded with EVAL_SEED, and the
+    surrounding training RNG stream is restored afterwards, so evaluating does
+    not change which batches/dropout masks the next training epoch draws."""
+    devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
+    with torch.random.fork_rng(devices=devices):
+        torch.manual_seed(EVAL_SEED)
+        yield
 
 def get_relation_dict(ont):
     return getattr(ont, 'enum_relations', {})
@@ -98,6 +126,10 @@ def get_sulo_node_class_mask(ont, class_name):
         if class_name.lower() in name.lower():
             mask[idx] = True
     return mask
+
+def _fmt(metric):
+    """4-decimal metric, or a marker for runs that produced none (OOM/failure)."""
+    return f"{metric:.4f}" if metric is not None else "OOM/FAIL"
 
 def parse_neighbors(neigh_str):
     nums = re.findall(r'\d+', neigh_str)
@@ -194,8 +226,12 @@ def get_graph_mask(graph_data, ontology_obj, schema_label, concept_name):
 
     return mask
 
-def train_final_model(model, graph_data, combined_indices, vector_table,
-                      epochs, batch_size=256, num_neighbors=(25, 10), lr=0.001,
+def _grad_norm(model):
+    """L2 norm of all parameter gradients together (what clip_grad_norm_ would clip), unmodified."""
+    return torch.nn.utils.get_total_norm([p.grad for p in model.parameters() if p.grad is not None]).item()
+
+def train_final_model(model, graph_data, combined_indices,
+                      epochs, batch_size=BATCH_SIZE, num_neighbors=(25, 10), lr=0.001,
                       weight_decay=1e-4, save_path=None):
     """
     Trains the final selected model on train+validation combined indices.
@@ -215,25 +251,25 @@ def train_final_model(model, graph_data, combined_indices, vector_table,
         for epoch in range(epochs):
             model.train()
             total_loss = 0
+            grad_norms = []
             for batch in train_loader:
                 batch = batch.to(device)
-                edge_index = batch.edge_index.contiguous()
-                edge_type = batch.edge_type.contiguous()
-                
+
                 optimizer.zero_grad()
-                predictions = model(batch.n_id_to_vec_row, edge_index, edge_type, batch.degree_feat)
-                
+                predictions = model(batch)
+
                 batch_targets = batch.y[:batch.batch_size].float()
                 batch_preds = predictions[:batch.batch_size].squeeze(1)
                 
                 loss = loss_fn(batch_preds, batch_targets)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                grad_norms.append(_grad_norm(model))
                 optimizer.step()
                 total_loss += loss.item()
             
             avg_train_loss = total_loss / len(train_loader)
-            print(f"Final Train Epoch {epoch+0:03d} | Train Loss: {avg_train_loss:.4f}")
+            print(f"Final Train Epoch {epoch+0:03d} | Train Loss: {avg_train_loss:.4f} | "
+                  f"Grad Norm (max): {max(grad_norms):.4f}")
         
         if save_path:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -251,7 +287,7 @@ def train_final_model(model, graph_data, combined_indices, vector_table,
             del optimizer
         cleanup()
 
-def evaluate_test_set(model, graph_data, test_indices, batch_size=256, num_neighbors=(25, 10)):
+def evaluate_test_set(model, graph_data, test_indices, batch_size=BATCH_SIZE, num_neighbors=(25, 10)):
     """
     Evaluates the finalized model on the unseen test split using a fixed 0.5 threshold.
     """
@@ -266,12 +302,10 @@ def evaluate_test_set(model, graph_data, test_indices, batch_size=256, num_neigh
     
     all_probs, all_targets = [], []
     try:
-        with torch.no_grad():
+        with torch.no_grad(), _eval_rng():
             for batch in test_loader:
                 batch = batch.to(device)
-                edge_index = batch.edge_index.contiguous()
-                edge_type = batch.edge_type.contiguous()
-                logits = model(batch.n_id_to_vec_row, edge_index, edge_type, batch.degree_feat)[:batch.batch_size].squeeze(1)
+                logits = model(batch)[:batch.batch_size].squeeze(1)
                 targets = batch.y[:batch.batch_size].float()
                 all_probs.extend(torch.sigmoid(logits).cpu().numpy())
                 all_targets.extend(targets.cpu().numpy())
@@ -372,16 +406,15 @@ def avg_children_per_case(graph_data, case_mask, child_mask, num_cases):
     return direct_edges.sum().item() / num_cases if num_cases > 0 else float('nan')
 
 
-def train_model(model, graph_data, train_indices, val_indices, vector_table,
-                 epochs=100, batch_size=64, num_neighbors=(10, 10, 5), lr=0.001,
+def train_model(model, graph_data, train_indices, val_indices,
+                 epochs=100, batch_size=BATCH_SIZE, num_neighbors=(10, 10, 5), lr=0.001,
                  weight_decay=5e-4, eval_frequency=1,
                  save_path=None, resume=False, patience=10, monitor='roc_auc'):
     """
-    Model-agnostic training loop. `model` must accept
-    forward(node_row_ids, edge_index, edge_type, degree_feat) -- for
-    architectures with no relation typing (e.g. GraphSAGE), forward should
-    accept and simply ignore edge_type so this loop never needs to branch
-    on model type.
+    Model-agnostic training loop. `model` must accept forward(batch) on a
+    NeighborLoader batch and read whatever node features and edge attributes
+    it needs from it (e.g. GraphSAGE simply ignores batch.edge_type), so this
+    loop never needs to branch on model type.
     """
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = model.to(device)
@@ -393,6 +426,7 @@ def train_model(model, graph_data, train_indices, val_indices, vector_table,
         'train_loss': [], 'val_loss': [],
         'val_accuracy': [], 'val_precision': [], 'val_recall': [],
         'val_f1': [], 'val_roc_auc': [], 'val_pr_auc': [],
+        'grad_norm_mean': [], 'grad_norm_max': [],   # pre-step L2 norm over all parameters
     }
 
     best_metric_val = -float('inf')
@@ -430,12 +464,10 @@ def train_model(model, graph_data, train_indices, val_indices, vector_table,
         def run_eval(loader):
             model.eval()
             all_probs, all_targets, total_loss, total_samples = [], [], 0, 0
-            with torch.no_grad():
+            with torch.no_grad(), _eval_rng():
                 for batch in loader:
                     batch = batch.to(device)
-                    edge_index = batch.edge_index.contiguous()
-                    edge_type = batch.edge_type.contiguous()
-                    logits = model(batch.n_id_to_vec_row, edge_index, edge_type, batch.degree_feat)[:batch.batch_size].squeeze(1)
+                    logits = model(batch)[:batch.batch_size].squeeze(1)
                     targets = batch.y[:batch.batch_size].float()
                     total_loss += loss_fn(logits, targets).item() * batch.batch_size
                     total_samples += batch.batch_size
@@ -464,26 +496,27 @@ def train_model(model, graph_data, train_indices, val_indices, vector_table,
         for epoch in range(start_epoch, epochs):
             model.train()
             total_loss = 0
+            grad_norms = []
 
             for batch in train_loader:
                 batch = batch.to(device)
-                edge_index = batch.edge_index.contiguous()
-                edge_type = batch.edge_type.contiguous()
 
                 optimizer.zero_grad()
-                predictions = model(batch.n_id_to_vec_row, edge_index, edge_type, batch.degree_feat)
+                predictions = model(batch)
 
                 batch_targets = batch.y[:batch.batch_size].float()
                 batch_preds = predictions[:batch.batch_size].squeeze(1)
 
                 loss = loss_fn(batch_preds, batch_targets)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                grad_norms.append(_grad_norm(model))
                 optimizer.step()
                 total_loss += loss.item()
 
             avg_train_loss = total_loss / len(train_loader)
             history['train_loss'].append(avg_train_loss)
+            history['grad_norm_mean'].append(float(np.mean(grad_norms)))
+            history['grad_norm_max'].append(max(grad_norms))
 
             if (epoch + 1) % eval_frequency == 0 or epoch == epochs - 1:
                 val_metrics = run_eval(val_loader)
@@ -497,7 +530,8 @@ def train_model(model, graph_data, train_indices, val_indices, vector_table,
 
                 print(f"Epoch {epoch+0:03d} | Train Loss: {avg_train_loss:.4f} | "
                       f"Val Loss: {val_metrics['loss']:.4f} | Val Acc: {val_metrics['accuracy']:.4f} | "
-                      f"Val F1: {val_metrics['f1']:.4f} | Val ROC-AUC: {val_metrics['roc_auc']:.4f}")
+                      f"Val F1: {val_metrics['f1']:.4f} | Val ROC-AUC: {val_metrics['roc_auc']:.4f} | "
+                      f"Grad Norm (max): {history['grad_norm_max'][-1]:.4f}")
 
                 current_metric = val_metrics[monitor]
 
@@ -574,7 +608,7 @@ def evaluate_ablation_configuration(model, graph_data, train_indices, val_indice
     trained_model, history = train_model(
         model=model, graph_data=graph_data,
         train_indices=train_indices, val_indices=val_indices,
-        vector_table=vector_table, epochs=epochs, batch_size=batch_size,
+        epochs=epochs, batch_size=batch_size,
         num_neighbors=neighbors, lr=lr, weight_decay=wd,
         save_path=None, resume=False, patience=patience, monitor='roc_auc'
     )
@@ -594,12 +628,10 @@ def evaluate_ablation_configuration(model, graph_data, train_indices, val_indice
 
     all_probs, all_targets = [], []
     try:
-        with torch.no_grad():
+        with torch.no_grad(), _eval_rng():
             for batch in eval_loader:
                 batch = batch.to(device)
-                edge_index = batch.edge_index.contiguous()
-                edge_type = batch.edge_type.contiguous()
-                logits = trained_model(batch.n_id_to_vec_row, edge_index, edge_type, batch.degree_feat)[:batch.batch_size].squeeze(1)
+                logits = trained_model(batch)[:batch.batch_size].squeeze(1)
                 targets = batch.y[:batch.batch_size].float()
                 all_probs.extend(torch.sigmoid(logits).cpu().numpy())
                 all_targets.extend(targets.cpu().numpy())
@@ -775,33 +807,35 @@ def run_ablation_run(name, test_data, pct_removed, model_factory, baseline_test_
     return record, baseline_test_auc, baseline_test_f1
 
 
-def run_one_config(model_factory, graph_data, train_indices, val_indices, vector_table,
-                    hidden_list, bases, neighbors, lr, wd, epochs, patience, save_path):
+def run_one_config(model_factory, graph_data, train_indices, val_indices,
+                    hidden_list, bases, neighbors, lr, wd, epochs, patience, save_path, seed=0):
     """
     Memory-safe single hyperparameter-configuration executor, returning
     val_roc_auc/best_epoch/status for use by a sweep.
 
     model_factory(hidden_list, bases) -> nn.Module: builds a fresh model for
         this configuration. All other architecture-specific construction
-        (vector_table, categorical ids, num_relations, FEATURE_DIM, ...)
-        must already be bound via closure by the caller. Pass bases=None
-        for architectures with no relation-basis concept (e.g. GraphSAGE)
-        -- the factory just ignores it.
+        (feature vocabulary sizes, num_relations, ...) must already be bound
+        via closure by the caller. Pass bases=None for architectures with no
+        relation-basis concept (e.g. GraphSAGE) -- the factory just ignores it.
+    seed: seeds model initialisation and the whole training run.
     """
     start_time = time.time()
 
+    set_seed(seed)
     model = model_factory(hidden_list, bases)
 
     history = None
     peak_auc = None
     best_epoch = None
+    max_grad_norm = None
     status = 'ok'
 
     try:
         gpu_model, history = train_model(
             model=model, graph_data=graph_data,
             train_indices=train_indices, val_indices=val_indices,
-            vector_table=vector_table, epochs=epochs, batch_size=256,
+            epochs=epochs, batch_size=BATCH_SIZE,
             num_neighbors=neighbors, lr=lr, weight_decay=wd,
             save_path=save_path, resume=False, patience=patience, monitor='roc_auc',
         )
@@ -810,10 +844,13 @@ def run_one_config(model_factory, graph_data, train_indices, val_indices, vector
             if x is not None and not np.isnan(x)
         ]
         peak_auc = max(auc_values) if auc_values else None
+        if peak_auc is None:
+            status = 'no_valid_metric'
 
         best_epoch = history.get('best_epoch', None)
+        max_grad_norm = max(history['grad_norm_max'])
         elapsed = time.time() - start_time
-        print(f"  -> Finished in {elapsed:.1f}s | Peak ROC-AUC: {peak_auc:.4f} (Best Epoch: {best_epoch})")
+        print(f"  -> Finished in {elapsed:.1f}s | Peak ROC-AUC: {_fmt(peak_auc)} (Best Epoch: {best_epoch})")
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
             print("  -> CUDA OOM: Skipping this configuration.")
@@ -841,28 +878,34 @@ def run_one_config(model_factory, graph_data, train_indices, val_indices, vector
     return {
         'num_bases': bases, 'lr': lr, 'weight_decay': wd,
         'neighbors': str(neighbors), 'val_roc_auc': peak_auc,
-        'best_epoch': best_epoch,
+        'best_epoch': best_epoch, 'max_grad_norm': max_grad_norm,
         'runtime_sec': elapsed, 'status': status,
     }
 
 
 def run_sequential_optimization_with_verification(
     model_factory, graph_data, train_indices, val_indices, test_indices,
-    vector_table, schema_label, save_dir, csv_path,
+    schema_label, save_dir, csv_path,
     grid_dim, grid_depth, grid_bases, grid_lr, grid_wd,
-    default_bases, default_lr, default_wd,
-    epochs, patience,
+    default_depth, default_bases, default_lr, default_wd,
+    epochs, patience, seed=0, final_seeds=(0,),
 ):
     """
     Sequential/greedy hyperparameter search: dim -> depth/neighbors -> bases
     -> lr -> wd, then a 2x2 verification grid over the top-2 dims x top-2
-    (bases, lr, wd) combos, then a final held-out test evaluation of the
-    overall winner. Returns the full results log as a DataFrame.
+    (bases, lr, wd) combos from all of phase 2, then a final held-out test
+    evaluation of the overall winner, once per seed in final_seeds. Returns
+    the full results log as a DataFrame.
+
+    default_depth: (layers, neighbors) used while dims are tuned in phase 1a;
+        layers must be >= 2, otherwise the model has no hidden layer to size.
+    seed: seeds every tuning run, so all configurations (and all KGs) start
+        from the same RNG state.
 
     model_factory(hidden_list, bases) -> nn.Module: builds a fresh model.
-    All other architecture-specific construction (vector_table, categorical
-    ids, num_relations, FEATURE_DIM, ...) must already be bound via closure
-    by the caller. For architectures with no relation-basis concept (e.g.
+    All other architecture-specific construction (feature vocabulary sizes,
+    num_relations, ...) must already be bound via closure by the caller.
+    For architectures with no relation-basis concept (e.g.
     GraphSAGE), pass grid_bases=[None] and default_bases=None -- the
     factory just ignores the bases argument it's given.
 
@@ -871,23 +914,25 @@ def run_sequential_optimization_with_verification(
         f"{save_dir}robust_tuning_logs/", the final unified-eval checkpoint
         goes directly under save_dir.
     """
+    default_layers, default_neighbors = default_depth
+    assert default_layers >= 2, "phase 1a tunes the hidden dim, so the default depth needs a hidden layer"
     cleanup()
 
     results = []
     phase_1a_results = {}
-    phase_2_results = {}
+    phase_2_results = {}  # (bases, lr, wd) -> val ROC-AUC, from every phase-2 sweep
 
-    def log_and_save(phase, parameter, val_auc, elapsed, status, d, l, n, b, lr, wd, best_epoch):
+    def log_and_save(phase, parameter, val_auc, elapsed, status, d, l, n, b, lr, wd, best_epoch, max_grad_norm=None):
         row_dict = {
             'phase': phase, 'parameter_tested': parameter,
             'val_roc_auc': val_auc,
             'runtime_sec': elapsed, 'status': status, 'hidden_dim': d, 'layers': l,
             'neighbors': str(n), 'num_bases': b, 'lr': lr, 'weight_decay': wd,
-            'best_epoch': best_epoch
+            'best_epoch': best_epoch, 'max_grad_norm': max_grad_norm,
         }
         results.append(row_dict)
         pd.DataFrame(results).to_csv(csv_path, index=False)
-        print(f"  -> [{phase}] Metric: {val_auc if val_auc else 'OOM/FAIL':.4f} | Best Epoch: {best_epoch} | Status: {status}")
+        print(f"  -> [{phase}] Metric: {_fmt(val_auc)} | Best Epoch: {best_epoch} | Status: {status}")
         return row_dict
 
     print(f"\n=======================================================")
@@ -895,20 +940,20 @@ def run_sequential_optimization_with_verification(
     print(f"=======================================================")
 
     # ── PHASE 1A: HIDDEN DIMENSION SWEEP ─────────────────────────────────────
-    print("\n>>> Phase 1a: Tuning Hidden Dimension (Depth=2, Neighbors=(25, 10))")
+    print(f"\n>>> Phase 1a: Tuning Hidden Dimension (Depth={default_layers}, Neighbors={default_neighbors})")
     best_dim = 64
     best_dim_auc = -float('inf')
 
     for dim in grid_dim:
         print(f" [RUNNING] Hidden Dim: {dim}")
         row = run_one_config(
-            model_factory, graph_data, train_indices, val_indices, vector_table,
-            hidden_list=[dim], bases=default_bases, neighbors=(25, 10), lr=default_lr, wd=default_wd,
-            epochs=epochs, patience=patience,
-            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_1a_dim{dim}.pt"
+            model_factory, graph_data, train_indices, val_indices,
+            hidden_list=[dim] * (default_layers - 1), bases=default_bases, neighbors=default_neighbors,
+            lr=default_lr, wd=default_wd, epochs=epochs, patience=patience,
+            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_1a_dim{dim}.pt", seed=seed,
         )
         log_and_save("1a_HiddenDim", f"dim_{dim}", row['val_roc_auc'], row['runtime_sec'], row['status'],
-                     dim, 2, (25, 10), default_bases, default_lr, default_wd, row['best_epoch'])
+                     dim, default_layers, default_neighbors, default_bases, default_lr, default_wd, row['best_epoch'], row['max_grad_norm'])
 
         if row['status'] == 'ok' and row['val_roc_auc'] is not None:
             phase_1a_results[dim] = row['val_roc_auc']
@@ -926,16 +971,16 @@ def run_sequential_optimization_with_verification(
 
     # ── PHASE 1B: DEPTH SWEEP ────────────────────────────────────────────────
     print(f"\n>>> Phase 1b: Tuning Model Depth & Sampling (hidden_dim locked at {best_dim})")
-    best_depth = 2
-    best_neighbors = (25, 10)
+    best_depth = default_layers
+    best_neighbors = default_neighbors
     best_depth_auc = -float('inf')
 
     best_dim_row = next((r for r in results if r['hidden_dim'] == best_dim and r['phase'] == '1a_HiddenDim'), None)
     best_dim_epoch = best_dim_row['best_epoch'] if best_dim_row else None
 
     for layers, neighbors in grid_depth:
-        if layers == 2 and neighbors == (25, 10):
-            print(f" [SKIPPING] Reusing 2-Layer result from Phase 1a.")
+        if (layers, tuple(neighbors)) == (default_layers, tuple(default_neighbors)):
+            print(f" [SKIPPING] Reusing {layers}-Layer result from Phase 1a.")
             log_and_save("1b_Depth", f"layers_{layers}", best_dim_auc, 0.0, "ok",
                          best_dim, layers, neighbors, default_bases, default_lr, default_wd, best_dim_epoch)
             if best_dim_auc > best_depth_auc:
@@ -946,13 +991,13 @@ def run_sequential_optimization_with_verification(
         print(f" [RUNNING] Depth: {layers} | Neighbors: {neighbors}")
         hidden_list = [best_dim] * (layers - 1)
         row = run_one_config(
-            model_factory, graph_data, train_indices, val_indices, vector_table,
+            model_factory, graph_data, train_indices, val_indices,
             hidden_list, bases=default_bases, neighbors=neighbors, lr=default_lr, wd=default_wd,
             epochs=epochs, patience=patience,
-            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_1b_L{layers}.pt"
+            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_1b_L{layers}.pt", seed=seed,
         )
         log_and_save("1b_Depth", f"layers_{layers}", row['val_roc_auc'], row['runtime_sec'], row['status'],
-                     best_dim, layers, neighbors, default_bases, default_lr, default_wd, row['best_epoch'])
+                     best_dim, layers, neighbors, default_bases, default_lr, default_wd, row['best_epoch'], row['max_grad_norm'])
 
         if row['status'] == 'ok' and row['val_roc_auc'] is not None and row['val_roc_auc'] > best_depth_auc:
             best_depth_auc = row['val_roc_auc']
@@ -974,6 +1019,7 @@ def run_sequential_optimization_with_verification(
             print(f" [SKIPPING] Reusing default Base state from Phase 1b.")
             log_and_save("2a_Bases", f"bases_{bases}", best_depth_auc, 0.0, "ok",
                          best_dim, best_depth, best_neighbors, bases, default_lr, default_wd, best_depth_epoch)
+            phase_2_results[(bases, default_lr, default_wd)] = best_depth_auc
             if best_depth_auc > best_bases_auc:
                 best_bases_auc = best_depth_auc
                 best_bases = bases
@@ -981,17 +1027,19 @@ def run_sequential_optimization_with_verification(
 
         print(f" [RUNNING] Bases: {bases}")
         row = run_one_config(
-            model_factory, graph_data, train_indices, val_indices, vector_table,
+            model_factory, graph_data, train_indices, val_indices,
             hidden_list, bases, best_neighbors, lr=default_lr, wd=default_wd,
             epochs=epochs, patience=patience,
-            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_2a_B{bases}.pt"
+            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_2a_B{bases}.pt", seed=seed,
         )
         log_and_save("2a_Bases", f"bases_{bases}", row['val_roc_auc'], row['runtime_sec'], row['status'],
-                     best_dim, best_depth, best_neighbors, bases, default_lr, default_wd, row['best_epoch'])
+                     best_dim, best_depth, best_neighbors, bases, default_lr, default_wd, row['best_epoch'], row['max_grad_norm'])
 
-        if row['status'] == 'ok' and row['val_roc_auc'] is not None and row['val_roc_auc'] > best_bases_auc:
-            best_bases_auc = row['val_roc_auc']
-            best_bases = bases
+        if row['status'] == 'ok' and row['val_roc_auc'] is not None:
+            phase_2_results[(bases, default_lr, default_wd)] = row['val_roc_auc']
+            if row['val_roc_auc'] > best_bases_auc:
+                best_bases_auc = row['val_roc_auc']
+                best_bases = bases
 
     best_bases_row = next((r for r in results if r['num_bases'] == best_bases and r['phase'] == '2a_Bases'), None)
     best_bases_epoch = best_bases_row['best_epoch'] if best_bases_row else None
@@ -1008,6 +1056,7 @@ def run_sequential_optimization_with_verification(
             print(f" [SKIPPING] Reusing current runner from Phase 2a.")
             log_and_save("2b_LR", f"lr_{lr}", best_bases_auc, 0.0, "ok",
                          best_dim, best_depth, best_neighbors, best_bases, lr, default_wd, best_bases_epoch)
+            phase_2_results[(best_bases, lr, default_wd)] = best_bases_auc
             if best_bases_auc > best_lr_auc:
                 best_lr_auc = best_bases_auc
                 best_lr = lr
@@ -1015,17 +1064,19 @@ def run_sequential_optimization_with_verification(
 
         print(f" [RUNNING] Learning Rate: {lr}")
         row = run_one_config(
-            model_factory, graph_data, train_indices, val_indices, vector_table,
+            model_factory, graph_data, train_indices, val_indices,
             hidden_list, best_bases, best_neighbors, lr, wd=default_wd,
             epochs=epochs, patience=patience,
-            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_2b_lr{lr}.pt"
+            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_2b_lr{lr}.pt", seed=seed,
         )
         log_and_save("2b_LR", f"lr_{lr}", row['val_roc_auc'], row['runtime_sec'], row['status'],
-                     best_dim, best_depth, best_neighbors, best_bases, lr, default_wd, row['best_epoch'])
+                     best_dim, best_depth, best_neighbors, best_bases, lr, default_wd, row['best_epoch'], row['max_grad_norm'])
 
-        if row['status'] == 'ok' and row['val_roc_auc'] is not None and row['val_roc_auc'] > best_lr_auc:
-            best_lr_auc = row['val_roc_auc']
-            best_lr = lr
+        if row['status'] == 'ok' and row['val_roc_auc'] is not None:
+            phase_2_results[(best_bases, lr, default_wd)] = row['val_roc_auc']
+            if row['val_roc_auc'] > best_lr_auc:
+                best_lr_auc = row['val_roc_auc']
+                best_lr = lr
 
     best_lr_row = next((r for r in results if r['lr'] == best_lr and r['phase'] == '2b_LR'), None)
     best_lr_epoch = best_lr_row['best_epoch'] if best_lr_row else None
@@ -1050,13 +1101,13 @@ def run_sequential_optimization_with_verification(
 
         print(f" [RUNNING] Weight Decay: {wd}")
         row = run_one_config(
-            model_factory, graph_data, train_indices, val_indices, vector_table,
+            model_factory, graph_data, train_indices, val_indices,
             hidden_list, best_bases, best_neighbors, best_lr, wd,
             epochs=epochs, patience=patience,
-            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_2c_wd{wd}.pt"
+            save_path=f"{save_dir}robust_tuning_logs/{schema_label}_2c_wd{wd}.pt", seed=seed,
         )
         log_and_save("2c_WD", f"wd_{wd}", row['val_roc_auc'], row['runtime_sec'], row['status'],
-                     best_dim, best_depth, best_neighbors, best_bases, best_lr, wd, row['best_epoch'])
+                     best_dim, best_depth, best_neighbors, best_bases, best_lr, wd, row['best_epoch'], row['max_grad_norm'])
 
         if row['status'] == 'ok' and row['val_roc_auc'] is not None:
             phase_2_results[(best_bases, best_lr, wd)] = row['val_roc_auc']
@@ -1083,6 +1134,9 @@ def run_sequential_optimization_with_verification(
             match_found = False
             for r in results:
                 if (r['hidden_dim'] == verify_dim and
+                    r['layers'] == best_depth and
+                    r['neighbors'] == str(best_neighbors) and
+                    r['val_roc_auc'] is not None and
                     r['num_bases'] == verify_bases and
                     r['lr'] == verify_lr and
                     r['weight_decay'] == verify_wd and
@@ -1100,7 +1154,7 @@ def run_sequential_optimization_with_verification(
             print(f" [RUNNING Verification] Dim={verify_dim} | Bases={verify_bases} | LR={verify_lr} | WD={verify_wd}")
             verify_hidden_list = [verify_dim] * (best_depth - 1)
             row = run_one_config(
-                model_factory, graph_data, train_indices, val_indices, vector_table,
+                model_factory, graph_data, train_indices, val_indices,
                 verify_hidden_list, verify_bases, best_neighbors, verify_lr, verify_wd,
                 epochs=epochs, patience=patience,
                 save_path=(
@@ -1110,14 +1164,15 @@ def run_sequential_optimization_with_verification(
                     f"B{verify_bases}_"
                     f"lr{verify_lr}_"
                     f"wd{verify_wd}.pt"
-                )
+                ), seed=seed,
             )
             log_and_save("3_Verification", f"dim_{verify_dim}_reg_B{verify_bases}", row['val_roc_auc'], row['runtime_sec'], row['status'],
-                         verify_dim, best_depth, best_neighbors, verify_bases, verify_lr, verify_wd, row['best_epoch'])
+                         verify_dim, best_depth, best_neighbors, verify_bases, verify_lr, verify_wd, row['best_epoch'], row['max_grad_norm'])
 
     # Extract winning configuration ONLY from Phase 3 Verification outputs
-    phase3_runs = [r for r in results if r['status'] == 'ok' and r['phase'] in ['3_Verification', '3_Verification_Cached']]
-    absolute_winner = max(phase3_runs, key=lambda x: x['val_roc_auc']) if len(phase3_runs) > 0 else max(results, key=lambda x: x['val_roc_auc'])
+    scored = [r for r in results if r['status'] == 'ok' and r['val_roc_auc'] is not None]
+    phase3_runs = [r for r in scored if r['phase'] in ['3_Verification', '3_Verification_Cached']]
+    absolute_winner = max(phase3_runs or scored, key=lambda x: x['val_roc_auc'])
 
     print(f"\n=======================================================")
     print(f" OPTIMIZATION COMPLETE FOR {schema_label.upper()}")
@@ -1129,25 +1184,29 @@ def run_sequential_optimization_with_verification(
     cleanup()
 
     # ── PHASE 4: FINAL GENERALIZATION TEST ON HELD-OUT TEST SPLIT ───────────────
-    final_row = evaluate_final_test_row(
-        model_factory=model_factory, graph_data=graph_data,
-        train_indices=train_indices, val_indices=val_indices, test_indices=test_indices,
-        vector_table=vector_table, schema_label=schema_label, save_dir=save_dir,
-        hidden_dim=absolute_winner['hidden_dim'], depth=best_depth,
-        neighbors=absolute_winner['neighbors'], bases=absolute_winner['num_bases'],
-        lr=absolute_winner['lr'], weight_decay=absolute_winner['weight_decay'],
-        best_epoch=absolute_winner['best_epoch'], val_roc_auc=absolute_winner['val_roc_auc'],
-    )
-    results.append(final_row)
-    pd.DataFrame(results).to_csv(csv_path, index=False)
+    # One retrain + test per seed; the spread across seeds is the run-to-run
+    # variance any difference between KGs has to be judged against.
+    for final_seed in final_seeds:
+        final_row = evaluate_final_test_row(
+            model_factory=model_factory, graph_data=graph_data,
+            train_indices=train_indices, val_indices=val_indices, test_indices=test_indices,
+            schema_label=schema_label, save_dir=save_dir,
+            hidden_dim=absolute_winner['hidden_dim'], depth=best_depth,
+            neighbors=absolute_winner['neighbors'], bases=absolute_winner['num_bases'],
+            lr=absolute_winner['lr'], weight_decay=absolute_winner['weight_decay'],
+            best_epoch=absolute_winner['best_epoch'], val_roc_auc=absolute_winner['val_roc_auc'],
+            seed=final_seed,
+        )
+        results.append(final_row)
+        pd.DataFrame(results).to_csv(csv_path, index=False)
 
     return pd.DataFrame(results)
 
 
 def evaluate_final_test_row(
     model_factory, graph_data, train_indices, val_indices, test_indices,
-    vector_table, schema_label, save_dir,
-    hidden_dim, depth, neighbors, bases, lr, weight_decay, best_epoch, val_roc_auc=None,
+    schema_label, save_dir,
+    hidden_dim, depth, neighbors, bases, lr, weight_decay, best_epoch, val_roc_auc=None, seed=0,
 ):
     """
     Trains the final model on train+val with a fixed (already-tuned) hyperparameter
@@ -1165,22 +1224,23 @@ def evaluate_final_test_row(
 
     combined_indices = torch.cat([train_indices, val_indices])
     hidden_list = [hidden_dim] * (depth - 1)
+    set_seed(seed)
     final_model = model_factory(hidden_list, bases)
 
     final_trained_model = train_final_model(
         model=final_model, graph_data=graph_data, combined_indices=combined_indices,
-        vector_table=vector_table, epochs=best_epoch + 1, batch_size=256,
+        epochs=best_epoch + 1, batch_size=BATCH_SIZE,
         num_neighbors=parse_neighbors(neighbors), lr=lr,
-        weight_decay=weight_decay, save_path=f"{save_dir}{schema_label}_final_unified_eval.pt"
+        weight_decay=weight_decay, save_path=f"{save_dir}{schema_label}_final_unified_eval_seed{seed}.pt"
     )
 
     test_metrics = evaluate_test_set(
         model=final_trained_model, graph_data=graph_data, test_indices=test_indices,
-        batch_size=256, num_neighbors=parse_neighbors(neighbors)
+        batch_size=BATCH_SIZE, num_neighbors=parse_neighbors(neighbors)
     )
 
     row_dict = {
-        'phase': "4_Final_Test_Evaluation", 'parameter_tested': "unified_model",
+        'phase': "4_Final_Test_Evaluation", 'parameter_tested': "unified_model", 'seed': seed,
         'val_roc_auc': val_roc_auc,
         'test_roc_auc': test_metrics['roc_auc'],
         'test_accuracy': test_metrics['accuracy'],
@@ -1214,8 +1274,8 @@ def evaluate_final_test_row(
 
 def run_final_test_evaluation(
     model_factory, graph_data, train_indices, val_indices, test_indices,
-    vector_table, schema_label, save_dir, csv_path,
-    hidden_dim, depth, neighbors, bases, lr, weight_decay, best_epoch, val_roc_auc=None,
+    schema_label, save_dir, csv_path,
+    hidden_dim, depth, neighbors, bases, lr, weight_decay, best_epoch, val_roc_auc=None, seeds=(0,),
 ):
     """
     Standalone re-run of just Phase 4 (final test evaluation) for an already-tuned
@@ -1236,15 +1296,16 @@ def run_final_test_evaluation(
             if r.get('phase') != '4_Final_Test_Evaluation'
         ]
 
-    row_dict = evaluate_final_test_row(
-        model_factory=model_factory, graph_data=graph_data,
-        train_indices=train_indices, val_indices=val_indices, test_indices=test_indices,
-        vector_table=vector_table, schema_label=schema_label, save_dir=save_dir,
-        hidden_dim=hidden_dim, depth=depth, neighbors=neighbors, bases=bases,
-        lr=lr, weight_decay=weight_decay, best_epoch=best_epoch, val_roc_auc=val_roc_auc,
-    )
-    results.append(row_dict)
-    pd.DataFrame(results).to_csv(csv_path, index=False)
+    for seed in seeds:
+        row_dict = evaluate_final_test_row(
+            model_factory=model_factory, graph_data=graph_data,
+            train_indices=train_indices, val_indices=val_indices, test_indices=test_indices,
+            schema_label=schema_label, save_dir=save_dir,
+            hidden_dim=hidden_dim, depth=depth, neighbors=neighbors, bases=bases,
+            lr=lr, weight_decay=weight_decay, best_epoch=best_epoch, val_roc_auc=val_roc_auc, seed=seed,
+        )
+        results.append(row_dict)
+        pd.DataFrame(results).to_csv(csv_path, index=False)
 
     return pd.DataFrame(results)
 

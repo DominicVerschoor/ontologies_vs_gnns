@@ -1,3 +1,0 @@
-model,schema,phase,emb_dim,val_mrr,val_mrr_macro,best_epoch,runtime_sec,status
-TransE,base,search,32,0.02287425375060625,0.026199028043254764,40,10725.661975383759,ok
-TransE,base,search,64,0.01902131754697769,0.021850717818890256,10,4922.4441838264465,ok

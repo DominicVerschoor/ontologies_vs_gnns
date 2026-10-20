@@ -1,4 +1,0 @@
-model,schema,phase,hidden_dim,val_mrr,runtime_sec,status,test_mrr_pooled
-GraphSAGE,sulo,search,32,0.01398125289379671,753.2273483276367,ok,
-GraphSAGE,sulo,search,64,0.028710393598426195,2528.8871319293976,ok,
-GraphSAGE,sulo,final_test,64,0.028710393598426195,,ok,0.001483963445067127
