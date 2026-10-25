@@ -1,13 +1,14 @@
 """
 R-GCN and GraphSAGE node classifiers, kept structurally parallel so the only
-difference between them is the convolution. Both take a NeighborLoader batch
-(see gnn_tools.train_model) carrying the node features built by
+difference between them is the convolution. Both take the whole graph as a
+Data object (full-batch, see gnn_tools.train_model) carrying the node features built by
 f1_node_data.node_features: a feature key and a scalar value per node, plus the
 degree feature.
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 from torch_geometric.nn import RGCNConv, SAGEConv
 
 
@@ -48,9 +49,20 @@ class RGCNModel(nn.Module):
         x = self.encoder(batch)
         edge_index, edge_type = batch.edge_index.contiguous(), batch.edge_type.contiguous()
         for conv in self.convs[:-1]:
-            x = F.relu(conv(x, edge_index, edge_type))
+            x = F.relu(self._conv(conv, x, edge_index, edge_type))
             x = F.dropout(x, p=self.dropout, training=self.training)
-        return self.convs[-1](x, edge_index, edge_type)
+        return self._conv(self.convs[-1], x, edge_index, edge_type)
+
+    @staticmethod
+    def _conv(conv, x, edge_index, edge_type):
+        """
+        One RGCNConv under gradient checkpointing: with bases, RGCNConv loops over the
+        relations and keeps an N x in_dim activation per relation for backward (~3.7 GB per
+        256-d layer on Pure SULO, so 3 layers do not fit in 12 GB). Checkpointing keeps only
+        the layer's input and recomputes the layer during backward, so logits and gradients
+        are unchanged. The conv has no randomness; dropout stays outside.
+        """
+        return checkpoint(conv, x, edge_index, edge_type, use_reentrant=False)
 
 
 class GraphSAGEModel(nn.Module):
@@ -58,6 +70,17 @@ class GraphSAGEModel(nn.Module):
     num_relations/num_bases: accepted but unused -- kept only so this
     constructor matches RGCNModel's shape for shared tooling. GraphSAGE
     ignores relation types (batch.edge_type is never read).
+
+    Each layer is the GraphSAGE-mean aggregator, W_l * mean_{u in N(v)} h_u + b + W_r * h_v
+    (project=False: neighbours are averaged raw, not first passed through a learned ReLU layer).
+    Pre-specified, not tuned (user, 2026-10-25): it is the official implementation's
+    MeanAggregator (MeanPoolingAggregator is the projected variant), PyG's SAGEConv default, and
+    what PyG's ogbn-products and OGB's ogbl-collab GraphSAGE baselines use. project=True and
+    aggr='max' are left to a separate sensitivity analysis.
+      https://github.com/williamleif/GraphSAGE/blob/master/graphsage/aggregators.py
+      https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.SAGEConv.html
+      https://github.com/pyg-team/pytorch_geometric/blob/2.3.0/examples/ogbn_products_sage.py
+      https://github.com/snap-stanford/ogb/blob/master/examples/linkproppred/collab/gnn.py
     """
 
     def __init__(self, num_keys, feature_dim, hidden_channels_list, num_relations=None,
@@ -66,7 +89,7 @@ class GraphSAGEModel(nn.Module):
         self.encoder = NodeEncoder(num_keys, feature_dim)
         dims = [feature_dim + 1] + hidden_channels_list + [out_channels]
         self.convs = nn.ModuleList(
-            SAGEConv(dims[i], dims[i + 1], aggr=aggr, project=True)
+            SAGEConv(dims[i], dims[i + 1], aggr=aggr, project=False)
             for i in range(len(dims) - 1)
         )
         self.dropout = dropout
