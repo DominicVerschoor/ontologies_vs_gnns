@@ -1,7 +1,6 @@
 import os
 import sys
 import random
-import contextlib
 import statistics
 
 import re
@@ -21,7 +20,6 @@ from sklearn.metrics import (
     roc_auc_score, 
     average_precision_score
 )
-from torch_geometric.loader import NeighborLoader
 from torch_geometric.utils import degree
 
 def cleanup():
@@ -49,76 +47,16 @@ def limit_cuda_memory_to_free_vram():
     torch.cuda.set_per_process_memory_fraction(cap / total)
     return cap
 
-# The legacy ablation code still evaluates on NeighborLoader-sampled subgraphs, drawn
-# from this seed. Node-prediction training and evaluation are full-batch (no sampling).
-EVAL_SEED = 0
-
 def set_seed(seed):
     """Seeds python, numpy and torch (CPU + all CUDA devices): model init and
-    dropout (and the legacy NeighborLoader sampling). GPU scatter ops (e.g.
-    inside RGCNConv) can still differ in the last float bits."""
+    dropout. GPU scatter ops (e.g. inside RGCNConv) can still differ in the last
+    float bits."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-@contextlib.contextmanager
-def _eval_rng():
-    """Context for an evaluation pass: sampling is seeded with EVAL_SEED, and the
-    surrounding training RNG stream is restored afterwards, so evaluating does
-    not change which batches/dropout masks the next training epoch draws."""
-    devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
-    with torch.random.fork_rng(devices=devices):
-        torch.manual_seed(EVAL_SEED)
-        yield
-
 def get_relation_dict(ont):
     return getattr(ont, 'enum_relations', {})
-
-def analyze_snr_dilution(graph_data, target_indices, usage_counts, num_neighbors, batch_size=256, max_batches=10):
-    """
-    Measures the Signal-to-Noise Ratio (SNR) in the model's local neighborhoods
-    by computing the ratio of unique text descriptor nodes to categorical fallback nodes.
-    """
-    # Use 0 workers for stable memory management during rapid sequential evaluations
-    loader = NeighborLoader(
-        graph_data, 
-        num_neighbors=list(num_neighbors), 
-        batch_size=batch_size,
-        input_nodes=target_indices, 
-        shuffle=False, 
-        num_workers=0
-    )
-    
-    all_text_pcts = []
-    all_fallback_pcts = []
-    all_sizes = []
-    
-    try:
-        for i, batch in enumerate(loader):
-            if i >= max_batches:
-                break
-            
-            # Map batch nodes back to their global feature-row usage profile
-            batch_usages = usage_counts[batch.n_id_to_vec_row]
-            num_b_nodes = batch_usages.size(0)
-            
-            # Count high-signal unique nodes (usage count == 1) vs. categorical fallback (usage > 1)
-            text_nodes_count = (batch_usages == 1).sum().item()
-            fallback_nodes_count = (batch_usages > 1).sum().item()
-            
-            all_sizes.append(num_b_nodes)
-            all_text_pcts.append((text_nodes_count / num_b_nodes) * 100.0)
-            all_fallback_pcts.append((fallback_nodes_count / num_b_nodes) * 100.0)
-            
-        return {
-            'avg_neighborhood_size': float(np.mean(all_sizes)),
-            'high_signal_text_pct': float(np.mean(all_text_pcts)),
-            'fallback_noise_pct': float(np.mean(all_fallback_pcts))
-        }
-    finally:
-        # Prevent PyG multiprocessing loaders from lingering in memory
-        del loader
-        cleanup()
 
 def compute_class_specific_metrics(targets, probs, threshold=0.5):
     preds = (probs >= threshold).astype(int)
@@ -393,23 +331,23 @@ def compute_entity_reuse_stats(graph_data, ontology_obj, schema_label, concept_n
     return pd.DataFrame(rows), num_cases, case_mask
 
 
-def avg_children_per_case(graph_data, case_mask, child_mask, num_cases):
-    """Average number of `child`-typed instances directly attached to each Case."""
-    src, dst = graph_data.edge_index
-    direct_edges = case_mask[src] & child_mask[dst]
-    return direct_edges.sum().item() / num_cases if num_cases > 0 else float('nan')
-
-
 def train_model(model, graph_data, train_indices, val_indices,
                  epochs=100, lr=0.001, weight_decay=5e-4, eval_frequency=1,
-                 save_path=None, resume=False, patience=10, monitor='roc_auc'):
+                 save_path=None, resume=False, patience=10, monitor='roc_auc', start_from_epoch=0):
     """
     Model-agnostic full-batch training loop: one gradient step per epoch on the
     train labels, scored on the val labels every eval_frequency epochs. `model`
     must accept forward(data) on the whole graph and read whatever node features
     and edge attributes it needs from it (e.g. GraphSAGE simply ignores
     data.edge_type), so this loop never needs to branch on model type.
+
+    start_from_epoch: warm-up. Epochs before it are trained and logged but neither
+    checkpointed nor counted towards patience, as Keras' EarlyStopping(start_from_epoch).
+    Without it, a val spike in the unstable first epochs can become the score to beat
+    and stop the run before it gets there for real.
     """
+    if start_from_epoch >= epochs:
+        raise ValueError(f"start_from_epoch {start_from_epoch} leaves no epoch to select from (epochs {epochs})")
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = model.to(device)
     graph = graph_data.clone().to(device)   # Data.to moves in place; the caller's graph stays put
@@ -471,6 +409,9 @@ def train_model(model, graph_data, train_indices, val_indices,
 
                 current_metric = val_metrics[monitor]
 
+                if epoch < start_from_epoch:
+                    continue
+
                 if np.isnan(current_metric):
                     epochs_no_improve += eval_frequency
                     continue
@@ -527,223 +468,12 @@ def train_model(model, graph_data, train_indices, val_indices,
         cleanup()
 
 
-def evaluate_ablation_configuration(model, graph_data, train_indices, val_indices, test_indices,
-                                    vector_table, usage_counts, neighbors, lr, wd, epochs=50, patience=15,
-                                    batch_size=256):
-    """
-    Executes a single ablation run. It trains the target ablated graph,
-    tracks runtime and early-stopping complexity, computes class-specific metrics,
-    PR-AUC, and runs the neighborhood SNR diagnostic.
-    """
-    start_wall_time = time.time()
-
-    trained_model, history = train_model(
-        model=model, graph_data=graph_data,
-        train_indices=train_indices, val_indices=val_indices,
-        epochs=epochs, batch_size=batch_size,
-        num_neighbors=neighbors, lr=lr, weight_decay=wd,
-        save_path=None, resume=False, patience=patience, monitor='roc_auc'
-    )
-
-    wall_runtime = time.time() - start_wall_time
-    best_epoch = history.get('best_epoch', 0)
-    epochs_run = len(history.get('train_loss', []))
-
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    trained_model = trained_model.to(device)
-    trained_model.eval()
-
-    eval_loader = NeighborLoader(
-        graph_data, num_neighbors=list(neighbors), batch_size=batch_size,
-        input_nodes=test_indices, num_workers=0, shuffle=False
-    )
-
-    all_probs, all_targets = [], []
-    try:
-        with torch.no_grad(), _eval_rng():
-            for batch in eval_loader:
-                batch = batch.to(device)
-                logits = trained_model(batch)[:batch.batch_size].squeeze(1)
-                targets = batch.y[:batch.batch_size].float()
-                all_probs.extend(torch.sigmoid(logits).cpu().numpy())
-                all_targets.extend(targets.cpu().numpy())
-    finally:
-        del eval_loader
-        cleanup()
-
-    # train_model returns a CPU model, but the .to(device) above for eval put
-    # it back on GPU -- move back explicitly so loop-callers (e.g. run_k_sweep)
-    # don't accumulate GPU memory across iterations.
-    trained_model.cpu()
-    del trained_model
-    cleanup()
-
-    targets_arr = np.array(all_targets)
-    probs_arr = np.array(all_probs)
-
-    class_metrics = compute_class_specific_metrics(targets_arr, probs_arr)
-    snr_metrics = analyze_snr_dilution(graph_data, test_indices, usage_counts, neighbors)
-
-    global_roc_auc = roc_auc_score(targets_arr, probs_arr)
-    global_f1 = f1_score(targets_arr, (probs_arr >= 0.5).astype(int), zero_division=0)
-    global_pr_auc = average_precision_score(targets_arr, probs_arr)
-
-    results = {
-        'test_roc_auc': global_roc_auc,
-        'test_f1_score': global_f1,
-        'test_pr_auc': global_pr_auc,
-        'training_time_sec': wall_runtime,
-        'best_epoch': best_epoch,
-        'epochs_run': epochs_run,
-        **class_metrics,
-        **snr_metrics
-    }
-
-    return results
-
-
-def run_ablation_run(name, test_data, pct_removed, model_factory, baseline_test_auc, baseline_test_f1,
-                      graph_data, schema_label, train_indices, val_indices, test_indices,
-                      vector_table, usage_counts, neighbors, lr, wd,
-                      epochs=50, patience=15, batch_sizes=(256, 128)):
-    """
-    Trains+evaluates one ablation configuration, returns its result record.
-    Stateless -- no side effects beyond training the model it's given.
-
-    model_factory: zero-arg callable returning a fresh model (architecture
-        specifics already bound via closure by the caller).
-    baseline_test_auc/f1: caller-owned running baseline. Pass None before
-        the "Baseline Control" run; pass through the previous return value
-        for every other call.
-
-    Returns (record, updated_baseline_test_auc, updated_baseline_test_f1).
-    """
-    start_time = time.time()
-
-    baseline_edge_count = graph_data.edge_index.size(1)
-    ablated_edge_count = test_data.edge_index.size(1)
-    edges_removed = baseline_edge_count - ablated_edge_count
-
-    # A node counts as "removed" if it had edges in the full graph but none
-    # left after ablation. Degree is summed over both edge_index rows since
-    # every triple is doubled into a forward+inverse pair.
-    baseline_deg = (degree(graph_data.edge_index[0], num_nodes=graph_data.num_nodes) +
-                     degree(graph_data.edge_index[1], num_nodes=graph_data.num_nodes))
-    ablated_deg = (degree(test_data.edge_index[0], num_nodes=graph_data.num_nodes) +
-                    degree(test_data.edge_index[1], num_nodes=graph_data.num_nodes))
-    isolated_mask = (baseline_deg > 0) & (ablated_deg == 0)
-    nodes_removed = int(isolated_mask.sum().item())
-    baseline_node_count = int((baseline_deg > 0).sum().item())
-    pct_nodes_removed = (nodes_removed / baseline_node_count * 100.0) if baseline_node_count > 0 else 0.0
-
-    schema_name = 'SULO' if schema_label == 'sulo' else 'Baseline'
-    print(f"\n[EVALUATING] Masking: {name} (Pruned {edges_removed} edges, {pct_removed:.2f}% of graph; "
-          f"{nodes_removed} nodes isolated, {pct_nodes_removed:.2f}% of graph)")
-
-    record = {
-        'ablation': name,
-        'schema': schema_name,
-        'edges_removed': int(edges_removed),
-        'pct_edges_removed': float(pct_removed),
-        'nodes_removed': nodes_removed,
-        'pct_nodes_removed': float(pct_nodes_removed),
-        'ROC_AUC': np.nan,
-        'F1': np.nan,
-        'PR_AUC': np.nan,
-        'delta_ROC_AUC': np.nan,
-        'delta_F1': np.nan,
-        'RID': np.nan,
-        'class0_F1': np.nan,
-        'class1_F1': np.nan,
-        'avg_neighborhood_size': np.nan,
-        'high_signal_text_pct': np.nan,
-        'fallback_noise_pct': np.nan,
-        'runtime_sec': 0.0,
-        'best_epoch': 0,
-        'epochs_run': 0,
-        'status': 'pending'
-    }
-
-    try:
-        # On CUDA OOM, retry at a smaller batch size instead of skipping --
-        # some concept masks concentrate sampling onto remaining hub nodes,
-        # ballooning the induced subgraph even with fewer edges removed.
-        for i, attempt_batch_size in enumerate(batch_sizes):
-            model = model_factory()
-            try:
-                metrics = evaluate_ablation_configuration(
-                    model=model, graph_data=test_data,
-                    train_indices=train_indices, val_indices=val_indices, test_indices=test_indices,
-                    vector_table=vector_table, usage_counts=usage_counts, neighbors=neighbors,
-                    lr=lr, wd=wd, epochs=epochs, patience=patience,
-                    batch_size=attempt_batch_size,
-                )
-                break
-            except RuntimeError as oom_err:
-                if "out of memory" not in str(oom_err).lower() or i == len(batch_sizes) - 1:
-                    raise
-                print(f"  -> CUDA OOM at batch_size={attempt_batch_size}, retrying at batch_size={batch_sizes[i + 1]}...")
-                # del before cleanup() -- the exception's traceback keeps the
-                # failed GPU-resident model alive until it's dropped.
-                del oom_err, model
-                cleanup()
-
-        # "Baseline Control" is the reference point every other ablation's
-        # delta/RID is measured against.
-        if name == "Baseline Control":
-            baseline_test_auc = metrics['test_roc_auc']
-            baseline_test_f1 = metrics['test_f1_score']
-
-        # Absolute effect: M_ablated - M_baseline
-        delta_roc_auc = metrics['test_roc_auc'] - baseline_test_auc
-        delta_f1 = metrics['test_f1_score'] - baseline_test_f1
-
-        # RID: (Baseline - Ablated) / % edges removed -- positive RID means
-        # removing this concept hurt performance (high-signal, low-density
-        # relation). Note the sign is opposite delta_roc_auc.
-        rid = -delta_roc_auc / pct_removed if pct_removed > 0.0 else 0.0
-
-        record.update({
-            'ROC_AUC': float(metrics['test_roc_auc']),
-            'F1': float(metrics['test_f1_score']),
-            'PR_AUC': float(metrics['test_pr_auc']),
-            'delta_ROC_AUC': float(delta_roc_auc),
-            'delta_F1': float(delta_f1),
-            'RID': float(rid),
-            'class0_F1': float(metrics['class0_f1']),
-            'class1_F1': float(metrics['class1_f1']),
-            'avg_neighborhood_size': float(metrics['avg_neighborhood_size']),
-            'high_signal_text_pct': float(metrics['high_signal_text_pct']),
-            'fallback_noise_pct': float(metrics['fallback_noise_pct']),
-            'runtime_sec': float(metrics['training_time_sec']),
-            'best_epoch': int(metrics['best_epoch']),
-            'epochs_run': int(metrics['epochs_run']),
-            'status': 'completed'
-        })
-
-        print(f"  -> ROC-AUC: {metrics['test_roc_auc']:.4f} (Delta: {delta_roc_auc:.4f}) | F1: {metrics['test_f1_score']:.4f} (Delta: {delta_f1:.4f}) | RID: {rid:.4f}")
-
-    except RuntimeError as e:
-        if "out of memory" in str(e).lower():
-            print("  -> CUDA OOM: Gracefully skipping configuration.")
-            record.update({
-                'status': 'oom',
-                'runtime_sec': float(time.time() - start_time)
-            })
-            del e  # drop the traceback so cleanup() can actually reclaim GPU memory
-            cleanup()
-        else:
-            record.update({'status': 'failed'})
-            raise e
-
-    return record, baseline_test_auc, baseline_test_f1
-
-
 def run_one_config(model_factory, graph_data, train_indices, val_indices,
-                    hidden_list, bases, lr, wd, epochs, patience, save_path, seed=0):
+                    hidden_list, bases, lr, wd, epochs, patience, save_path, seed=0, start_from_epoch=0):
     """
     Memory-safe single hyperparameter-configuration executor, returning
-    val_roc_auc/best_epoch/status for use by a sweep.
+    val_roc_auc/best_epoch/status for use by a sweep. val_roc_auc is the peak from
+    start_from_epoch on (see train_model), i.e. the restored checkpoint's.
 
     model_factory(hidden_list, bases) -> nn.Module: builds a fresh model for
         this configuration. All other architecture-specific construction
@@ -769,9 +499,10 @@ def run_one_config(model_factory, graph_data, train_indices, val_indices,
             train_indices=train_indices, val_indices=val_indices,
             epochs=epochs, lr=lr, weight_decay=wd,
             save_path=save_path, resume=False, patience=patience, monitor='roc_auc',
+            start_from_epoch=start_from_epoch,
         )
         auc_values = [
-            x for x in history.get("val_roc_auc", [])
+            x for x in history.get("val_roc_auc", [])[start_from_epoch:]
             if x is not None and not np.isnan(x)
         ]
         peak_auc = max(auc_values) if auc_values else None
@@ -815,9 +546,10 @@ def run_one_config(model_factory, graph_data, train_indices, val_indices,
 
 
 def run_config_over_seeds(model_factory, graph_data, train_indices, val_indices,
-                          hidden_list, bases, lr, wd, epochs, patience, save_path, seeds):
+                          hidden_list, bases, lr, wd, epochs, patience, save_path, seeds, start_from_epoch=0):
     """
-    run_one_config once per seed (checkpoint '<save_path>_seed<s>.pt'). The config is
+    run_one_config once per seed (checkpoint '<save_path>_seed<s>.pt'), with an early-stopping
+    warm-up of start_from_epoch epochs (see train_model; the main tuning uses none). The config is
     scored by its mean val ROC-AUC over the seeds, so a seed that collapses early lowers
     the score instead of deciding it. Its best epoch, used for the final retrain, is the
     median per-seed best epoch (median_low: an epoch one of the seeds actually reached).
@@ -829,6 +561,7 @@ def run_config_over_seeds(model_factory, graph_data, train_indices, val_indices,
         runs.append(run_one_config(
             model_factory, graph_data, train_indices, val_indices, hidden_list, bases, lr, wd,
             epochs=epochs, patience=patience, save_path=f"{save_path.removesuffix('.pt')}_seed{s}.pt", seed=s,
+            start_from_epoch=start_from_epoch,
         ))
         if runs[-1]['status'] != 'ok':
             break
@@ -850,18 +583,21 @@ def run_config_over_seeds(model_factory, graph_data, train_indices, val_indices,
     }
 
 
+def _ended_by_epoch_cap(best_epoch_seeds, epochs, patience):
+    """
+    Whether any seed of a run ('<e0>;<e1>;...' best epochs) was cut off by the epoch cap
+    rather than by early stopping. A seed stops early at epoch best_epoch + patience, which
+    only happens before the cap when best_epoch < epochs - patience; otherwise it ends at
+    epoch epochs - 1 while possibly still improving.
+    """
+    return any(int(e) >= epochs - patience for e in str(best_epoch_seeds).split(';'))
+
+
 def runs_ended_by_epoch_cap(results, epochs, patience):
-    """
-    The trained tuning runs (phases 1-3) in which at least one seed was cut off by the
-    epoch cap rather than by early stopping. A seed stops early at epoch best_epoch +
-    patience, which only happens before the cap when best_epoch < epochs - patience;
-    otherwise it ends at epoch epochs - 1 while possibly still improving.
-    """
+    """The trained tuning runs (phases 1-3) with a seed cut off by the epoch cap (_ended_by_epoch_cap)."""
     trained = results[(results['runtime_sec'] > 0) & (results['status'] == 'ok')
                       & results['best_epoch_seeds'].notna()]
-    def cut_off(seed_epochs):
-        return any(int(e) >= epochs - patience for e in str(seed_epochs).split(';'))
-    return trained[trained['best_epoch_seeds'].map(cut_off)]
+    return trained[trained['best_epoch_seeds'].map(lambda e: _ended_by_epoch_cap(e, epochs, patience))]
 
 
 def finished_tuning_results(csv_path, grid_dim, grid_depth, tuning_seeds, final_seeds):
@@ -893,7 +629,7 @@ def run_sequential_optimization_with_verification(
     schema_label, save_dir, csv_path,
     grid_dim, grid_depth, grid_bases, grid_lr, grid_wd,
     default_bases, default_lr, default_wd,
-    epochs, patience, tuning_seeds=(0,), final_seeds=(0,),
+    epochs, patience, tuning_seeds=(0,), final_seeds=(0,), start_from_epoch=0,
 ):
     """
     Hyperparameter search: a joint dim x depth grid, then greedy bases -> lr -> wd at
@@ -910,6 +646,10 @@ def run_sequential_optimization_with_verification(
     tuning_seeds: every configuration is trained once per seed and scored by its mean
         val ROC-AUC (see run_config_over_seeds), so all configurations (and all KGs)
         see the same seeds.
+    start_from_epoch: early-stopping warm-up of every tuning run (see train_model): without
+        it, a seed that kept a val spike from the first epochs as its best scored that
+        spike, so the search compared stopping artefacts instead of configurations. The
+        final retrain trains a fixed best_epoch + 1 epochs and has no early stopping.
 
     model_factory(hidden_list, bases) -> nn.Module: builds a fresh model.
     All other architecture-specific construction (feature vocabulary sizes,
@@ -933,6 +673,7 @@ def run_sequential_optimization_with_verification(
             model_factory, graph_data, train_indices, val_indices, hidden_list, bases, lr, wd,
             epochs=epochs, patience=patience,
             save_path=f"{save_dir}robust_tuning_logs/{schema_label}_{name}.pt", seeds=tuning_seeds,
+            start_from_epoch=start_from_epoch,
         )
 
     def log_and_save(phase, parameter, row, d, l, b, lr, wd):
@@ -1207,101 +948,202 @@ def run_final_test_evaluation(
     return pd.DataFrame(results)
 
 
-def run_k_sweep(model_factory, graph_data, schema_label,
-                 train_indices, val_indices, test_indices,
-                 vector_table, usage_counts,
-                 hidden_dim, bases, lr, wd,
-                 k_values, epochs=50, patience=15,
-                 batch_sizes=(256, 128, 64, 32), csv_path=None, resume=False):
+TEST_METRICS = ['test_roc_auc', 'test_pr_auc', 'test_f1', 'test_accuracy']
+ABLATION_METRICS = ['val_roc_auc', *TEST_METRICS]
+
+
+def run_ablation_variant(model_factory, kg_data, variant, hidden_list, bases, lr, wd,
+                         epochs, patience, start_from_epoch, seeds, save_dir, csv_path):
     """
-    Controlled K-hop depth sweep (Experiment 2 / RQ1b): varies neighborhood
-    depth/fanout (K) with every other hyperparameter held constant, so any
-    metric difference between rows is attributable to K alone.
+    Trains one enrichment-ablation graph at a fixed configuration, once per seed: early
+    stopping on val after a warm-up of start_from_epoch epochs (run_one_config), then the
+    best-val checkpoint is scored on test. Every variant gets the same configuration, so
+    only the graph differs.
 
-    model_factory(hidden_list, bases) -> nn.Module: same factory shape used
-        elsewhere in gnn_tools (RGCN or GraphSAGE unchanged).
-    k_values: list of (K, num_neighbors) pairs, e.g.
-        [(1, (25,)), (2, (25, 10)), (3, (15, 10, 5))]. hidden_list is built
-        as [hidden_dim] * (K - 1). Pass just the K values you want to
-        (re-)run, e.g. to retry a single K that previously OOM'd.
-    resume: if True and csv_path exists, its rows are loaded first and
-        upserted by K (matching K replaced, others untouched) before saving.
-
-    Returns a DataFrame with one row per K. Model name is read off the
-    constructed model's own class (type(model).__name__).
+    Rows go to csv_path (shared by all variants) as each seed finishes. On a re-run, a
+    (variant, seed) with an 'ok' row is skipped and failed rows are dropped and retried.
+    Rows of another configuration (e.g. from before a re-tuning) raise; other constants are
+    not checked: move the CSV away after changing one.
     """
-    if resume and csv_path and os.path.exists(csv_path):
-        rows = pd.read_csv(csv_path).to_dict('records')
-    else:
-        rows = []
+    rows = pd.read_csv(csv_path).to_dict('records') if os.path.exists(csv_path) else []
+    rows = [r for r in rows if r['status'] == 'ok']
+    config = {'hidden_dim': hidden_list[0] if hidden_list else None, 'layers': len(hidden_list) + 1,
+              'num_bases': bases, 'lr': lr, 'weight_decay': wd}
+    if any(_config_of(r) != config for r in rows):
+        raise ValueError(f"{csv_path} holds rows of another configuration than {config}; move it away")
+    done = {(r['variant'], r['seed']) for r in rows}
+    graph = kg_data.data
 
-    for k, neighbors in k_values:
-        print(f"\n[K-SWEEP] K={k} | Neighbors={neighbors}")
-        hidden_list = [hidden_dim] * (k - 1)
-
-        record = {
-            'model': None, 'schema': schema_label, 'K': k, 'neighbors': str(neighbors),
-            'ROC_AUC': np.nan, 'F1': np.nan, 'PR_AUC': np.nan,
-            'param_count': np.nan, 'runtime_sec': 0.0,
-            'best_epoch': 0, 'epochs_run': 0,
-            'avg_neighborhood_size': np.nan, 'high_signal_text_pct': np.nan, 'fallback_noise_pct': np.nan,
-            'status': 'pending',
-        }
-
-        try:
-            # Same OOM-retry safety net as run_ablation_run -- only
-            # triggered on failure, doesn't compromise the "everything but
-            # K is constant" design.
-            for i, attempt_batch_size in enumerate(batch_sizes):
-                model = model_factory(hidden_list, bases)
-                record['model'] = type(model).__name__
-                record['param_count'] = int(sum(p.numel() for p in model.parameters()))
-                try:
-                    metrics = evaluate_ablation_configuration(
-                        model=model, graph_data=graph_data,
-                        train_indices=train_indices, val_indices=val_indices, test_indices=test_indices,
-                        vector_table=vector_table, usage_counts=usage_counts, neighbors=neighbors,
-                        lr=lr, wd=wd, epochs=epochs, patience=patience,
-                        batch_size=attempt_batch_size,
-                    )
-                    break
-                except RuntimeError as oom_err:
-                    if "out of memory" not in str(oom_err).lower() or i == len(batch_sizes) - 1:
-                        raise
-                    print(f"  -> CUDA OOM at batch_size={attempt_batch_size}, retrying at batch_size={batch_sizes[i + 1]}...")
-                    del oom_err, model
-                    cleanup()
-
-            record.update({
-                'ROC_AUC': float(metrics['test_roc_auc']),
-                'F1': float(metrics['test_f1_score']),
-                'PR_AUC': float(metrics['test_pr_auc']),
-                'runtime_sec': float(metrics['training_time_sec']),
-                'best_epoch': int(metrics['best_epoch']),
-                'epochs_run': int(metrics['epochs_run']),
-                'avg_neighborhood_size': float(metrics['avg_neighborhood_size']),
-                'high_signal_text_pct': float(metrics['high_signal_text_pct']),
-                'fallback_noise_pct': float(metrics['fallback_noise_pct']),
-                'status': 'completed',
-            })
-            print(f"  -> ROC-AUC: {metrics['test_roc_auc']:.4f} | F1: {metrics['test_f1_score']:.4f} | Params: {record['param_count']:,}")
-
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                print("  -> CUDA OOM: Gracefully skipping this K.")
-                record['status'] = 'oom'
-                del e  # drop the traceback so cleanup() can actually reclaim GPU memory
-                cleanup()
-            else:
-                record['status'] = 'failed'
-                raise e
-
-        # Upsert by K: drop any existing row for this K (from a loaded
-        # resume, or an earlier K value in this same call) before adding
-        # the fresh one, so re-running a K never leaves a stale duplicate.
-        rows = [r for r in rows if r.get('K') != k]
-        rows.append(record)
-        if csv_path:
-            pd.DataFrame(rows).to_csv(csv_path, index=False)
+    for seed in seeds:
+        if (variant, seed) in done:
+            print(f"{variant} seed {seed}: already in {csv_path}")
+            continue
+        print(f"\n=== Ablation {variant} | seed {seed} ===")
+        save_path = f"{save_dir}{variant}_seed{seed}.pt"
+        run = run_one_config(model_factory, graph, kg_data.train, kg_data.val, hidden_list, bases, lr, wd,
+                             epochs=epochs, patience=patience, save_path=save_path, seed=seed,
+                             start_from_epoch=start_from_epoch)
+        test_metrics = {}
+        if run['status'] == 'ok':
+            model = model_factory(hidden_list, bases)
+            model.load_state_dict(torch.load(save_path, map_location='cpu', weights_only=False)['model_state_dict'])
+            test_metrics = {f'test_{k}': v for k, v in evaluate_test_set(model, graph, kg_data.test).items()}
+            del model
+            cleanup()
+        rows.append({
+            'variant': variant, 'seed': seed, **run, **test_metrics,
+            'hidden_dim': hidden_list[0] if hidden_list else None, 'layers': len(hidden_list) + 1,
+            'num_nodes': graph.num_nodes, 'num_edges': graph.edge_index.size(1),
+            'num_relations': kg_data.num_relations, 'num_feature_keys': len(kg_data.vocabulary),
+        })
+        pd.DataFrame(rows).to_csv(csv_path, index=False)
 
     return pd.DataFrame(rows)
+
+
+def summarize_ablation(results, controls):
+    """
+    Mean ± std per variant over its seeds, plus each mean's difference from its control's
+    (controls: variant -> control variant; a control is its own control, so its deltas are 0).
+    Variants keep the order of `controls`.
+    """
+    stats = results.groupby('variant')[ABLATION_METRICS].agg(['mean', 'std'])
+    stats.columns = [f'{m}_{s}' for m, s in stats.columns]
+    stats = stats.reindex(list(controls))
+    stats.insert(0, 'control', [controls[v] for v in stats.index])
+    stats.insert(1, 'n_seeds', results.groupby('variant').size().reindex(stats.index))
+    for m in ('val_roc_auc', 'test_roc_auc'):
+        stats[f'delta_{m}'] = stats[f'{m}_mean'] - stats[f'{m}_mean'].reindex(stats['control']).values
+    return stats
+
+
+TUNE_COLUMNS = ['val_roc_auc', 'val_roc_auc_std', 'val_roc_auc_seeds', 'best_epoch', 'best_epoch_seeds',
+                'max_grad_norm', 'runtime_sec', 'status']
+FINAL_COLUMNS = ['seed', 'val_roc_auc', 'best_epoch', 'test_roc_auc', 'test_accuracy', 'test_precision',
+                 'test_recall', 'test_f1', 'test_pr_auc', 'test_class0_f1', 'test_class1_f1', 'num_parameters',
+                 'status']
+
+
+def _config_of(row):
+    """A results row's (hidden_dim, layers, num_bases, lr, weight_decay), with NaN read as None."""
+    optional_int = lambda value: None if pd.isna(value) else int(value)
+    return {'hidden_dim': optional_int(row['hidden_dim']), 'layers': int(row['layers']),
+            'num_bases': optional_int(row['num_bases']), 'lr': float(row['lr']),
+            'weight_decay': float(row['weight_decay'])}
+
+
+def tuned_winner(tuning_results, tuning_seeds, final_seeds, start_from_epoch=0):
+    """
+    A finished tuning run's winner as dicts: (config, phase-3 row, phase-4 rows). The config is
+    the phase-4 rows' (hidden_dim, layers, num_bases, lr, weight_decay); the phase-3 row is the
+    verification row of that config, which holds its per-seed val scores and best epochs.
+    Raises if the run does not match the protocol it is reused under: phase-4 rows that
+    disagree on the config, other final seeds, another number of tuning seeds, or a seed whose
+    best epoch falls inside a warm-up of start_from_epoch epochs (the tuning had none; a seed
+    that peaked after it is the same with or without it, see train_model).
+    """
+    final = tuning_results[tuning_results['phase'] == '4_Final_Test_Evaluation']
+    final = final.astype({'seed': int}).to_dict('records')
+    configs = [_config_of(r) for r in final]
+    if not configs or any(c != configs[0] for c in configs):
+        raise ValueError("the phase-4 rows are missing or disagree on the winning configuration")
+    if sorted(r['seed'] for r in final) != sorted(final_seeds):
+        raise ValueError(f"phase-4 seeds {sorted(r['seed'] for r in final)} != final_seeds {sorted(final_seeds)}")
+    config = configs[0]
+
+    phase3 = tuning_results[tuning_results['phase'].isin(['3_Verification', '3_Verification_Cached'])
+                            & (tuning_results['status'] == 'ok')]
+    matches = [r for r in phase3.to_dict('records') if _config_of(r) == config]
+    if not matches:
+        raise ValueError(f"no phase-3 row with the winning configuration {config}")
+    tune = matches[0]
+    if len(str(tune['val_roc_auc_seeds']).split(';')) != len(tuning_seeds):
+        raise ValueError(f"the winner was tuned with seeds '{tune['val_roc_auc_seeds']}', not {len(tuning_seeds)}")
+    if any(int(e) < start_from_epoch for e in str(tune['best_epoch_seeds']).split(';')):
+        raise ValueError(f"a winner seed peaked inside the {start_from_epoch}-epoch warm-up "
+                         f"(best epochs {tune['best_epoch_seeds']}), so it would change under it")
+    return config, tune, final
+
+
+def run_k_sweep(model_factory, kg_data, kg, tuning_results, k_values, epochs, patience, start_from_epoch,
+                tuning_seeds, final_seeds, save_dir, csv_path):
+    """
+    Message-passing depth sweep for one KG at its own tuned configuration: only the number
+    of layers K changes (hidden_list = [hidden_dim] * (K - 1); K = 1 has no hidden layer).
+    Each K follows tuning phases 3-4: run_config_over_seeds on tuning_seeds (val early
+    stopping after a warm-up of start_from_epoch epochs, mean val ROC-AUC, median best epoch),
+    then evaluate_final_test_row per final seed (retrain on train+val for best_epoch + 1
+    epochs, test). The winner's own depth is that computation already (tuned_winner checks
+    that the warm-up does not change it), so its phase-3/4 rows are copied from
+    tuning_results (reused=True) instead of re-run.
+
+    Rows (kg, K, phase 'tune' | 'final', ...) go to csv_path, shared by all KGs of a model,
+    after each K. On a re-run, a (kg, K) with an 'ok' tune row and every final seed is
+    skipped; a partial or failed one is dropped and re-run. Rows of this KG with another
+    configuration (e.g. from before a re-tuning) raise; other constants are not checked: move
+    the CSV away after changing one. A failed (e.g. OOM) K logs its tune row only.
+    """
+    config, tuned, tuned_final = tuned_winner(tuning_results, tuning_seeds, final_seeds, start_from_epoch)
+    if config['hidden_dim'] is None and any(k > 1 for k in k_values):
+        raise ValueError(f"{kg}'s winner has one layer, so there is no hidden dim to deepen")
+    rows = pd.read_csv(csv_path).to_dict('records') if os.path.exists(csv_path) else []
+    at_depth = lambda k: dict(config, layers=k, hidden_dim=config['hidden_dim'] if k > 1 else None)
+    if any(r['kg'] == kg and _config_of(r) != at_depth(int(r['K'])) for r in rows):
+        raise ValueError(f"{csv_path} holds {kg} rows of another configuration than {config}; move it away")
+
+    def finished(k):
+        mine = [r for r in rows if r['kg'] == kg and r['K'] == k]
+        return (any(r['phase'] == 'tune' and r['status'] == 'ok' for r in mine)
+                and sorted(int(r['seed']) for r in mine if r['phase'] == 'final') == sorted(final_seeds))
+
+    for k in k_values:
+        if finished(k):
+            print(f"{kg} K={k}: already in {csv_path}")
+            continue
+        rows = [r for r in rows if not (r['kg'] == kg and r['K'] == k)]
+        hidden_list = [config['hidden_dim']] * (k - 1)
+        dim = hidden_list[0] if hidden_list else None
+        shared = {'kg': kg, 'K': k, **at_depth(k), 'reused': k == config['layers']}
+        print(f"\n=== K-sweep {kg} | K={k}{' (tuned depth, reused)' if shared['reused'] else ''} ===")
+
+        if shared['reused']:
+            tune, finals = tuned, tuned_final
+        else:
+            tune = run_config_over_seeds(
+                model_factory, kg_data.data, kg_data.train, kg_data.val, hidden_list, config['num_bases'],
+                config['lr'], config['weight_decay'], epochs=epochs, patience=patience,
+                save_path=f"{save_dir}tuning/{kg}_K{k}.pt", seeds=tuning_seeds, start_from_epoch=start_from_epoch,
+            )
+            finals = [] if tune['status'] != 'ok' else [
+                evaluate_final_test_row(
+                    model_factory=model_factory, graph_data=kg_data.data, train_indices=kg_data.train,
+                    val_indices=kg_data.val, test_indices=kg_data.test, schema_label=f"{kg}_K{k}",
+                    save_dir=save_dir, hidden_dim=dim, depth=k, bases=config['num_bases'], lr=config['lr'],
+                    weight_decay=config['weight_decay'], best_epoch=tune['best_epoch'],
+                    val_roc_auc=tune['val_roc_auc'], seed=seed,
+                )
+                for seed in final_seeds
+            ]
+
+        capped = tune['status'] == 'ok' and _ended_by_epoch_cap(tune['best_epoch_seeds'], epochs, patience)
+        rows.append({**shared, 'phase': 'tune', **{c: tune[c] for c in TUNE_COLUMNS}, 'ended_by_epoch_cap': capped})
+        rows += [{**shared, 'phase': 'final', **{c: f[c] for c in FINAL_COLUMNS}} for f in finals]
+        pd.DataFrame(rows).to_csv(csv_path, index=False)
+        cleanup()
+
+    return pd.DataFrame(rows)
+
+
+def summarize_k_sweep(results):
+    """
+    One row per (kg, K): the tune row's mean val ROC-AUC over the tuning seeds and median
+    best epoch, then mean ± std of the test metrics over the final seeds.
+    """
+    tune = results[results['phase'] == 'tune'].set_index(['kg', 'K'])
+    final = results[results['phase'] == 'final'].groupby(['kg', 'K'])
+    stats = final[TEST_METRICS].agg(['mean', 'std'])
+    stats.columns = [f'{m}_{s}' for m, s in stats.columns]
+    summary = tune[['val_roc_auc', 'val_roc_auc_std', 'best_epoch', 'reused', 'ended_by_epoch_cap']].join(stats)
+    summary.insert(2, 'n_seeds', final.size())
+    summary['num_parameters'] = final['num_parameters'].first()
+    return summary.sort_index()

@@ -22,11 +22,31 @@ import torch
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
 
-from f1_population import RDF_TYPE, SCHEMA_FILES, XSD_NS, read_schema, render_ntriples
+from f1_population import RDF_TYPE, SCHEMA_FILES, XSD_NS, Schema, read_schema, render_ntriples
 
 LABEL_PROPERTY = "hasRacePoints"
 # Known only after the race; hasFinishPosition alone predicts the label with ROC-AUC 0.985.
 OUTCOME_PROPERTIES = frozenset({"hasFinishPosition", "hasStatus", "hasLapsCompleted"})
+
+# What Hybrid adds to Ad-hoc, one unit per piece of SULO semantics, so each can be ablated alone.
+# sulo_typing owns Schema.sulo_superclass (instances also typed with their SULO superclass); the
+# other units own schema properties. heldAtCircuit -> isInCircuit is not a unit: it renames the
+# predicate and leaves the edges unchanged.
+ABLATION_UNITS = {
+    "sulo_typing": frozenset(),
+    "precedesRace": frozenset({"precedesRace"}),
+    "precedesSeason": frozenset({"precedesSeason"}),
+    "hasTeamMember": frozenset({"hasTeamMember"}),
+    "rank_reification": frozenset({"hasRank"}),   # Position/<n>/hasRank -> sulo:hasValue vs a direct literal
+}
+# variant -> (base KG, donor KG, units whose shape comes from the donor). The base KG is the
+# variant's control: leave-one-out from Hybrid, add-one-in to Ad-hoc.
+ABLATION_VARIANTS = {
+    "hybrid_sulo": ("hybrid_sulo", "adhoc", frozenset()),
+    "adhoc": ("adhoc", "hybrid_sulo", frozenset()),
+    **{f"hybrid_minus_{u}": ("hybrid_sulo", "adhoc", frozenset({u})) for u in ABLATION_UNITS},
+    **{f"adhoc_plus_{u}": ("adhoc", "hybrid_sulo", frozenset({u})) for u in ABLATION_UNITS},
+}
 
 NUMERIC_DATATYPES = {XSD_NS + t for t in ("integer", "nonNegativeInteger", "decimal")}
 _LITERAL = re.compile(r'^"(.*)"\^\^<([^>]+)>$')
@@ -58,6 +78,26 @@ def stratified_split(labels: pd.Series, seed=42) -> tuple[list[str], list[str], 
     train, rest, _, y_rest = train_test_split(iris, y, test_size=0.2, stratify=y, random_state=seed)
     val, test = train_test_split(rest, test_size=0.5, stratify=y_rest, random_state=seed)
     return train, val, test
+
+
+def swap_units(base: Schema, donor: Schema, units) -> Schema:
+    """
+    base with each unit's shape taken from donor. A property the donor lacks is dropped, so
+    render_ntriples sets its assertions aside and the facts vanish from the graph.
+    """
+    properties = dict(base.properties)
+    for prop in set().union(*(ABLATION_UNITS[u] for u in units)):
+        properties.pop(prop, None)
+        if prop in donor.properties:
+            properties[prop] = donor.properties[prop]
+    superclass = donor.sulo_superclass if "sulo_typing" in units else base.sulo_superclass
+    return Schema(properties, dict(superclass))
+
+
+def ablation_schema(variant: str, schemas: dict[str, Schema]) -> Schema:
+    """The schema of an ABLATION_VARIANTS entry, from the parsed {kg: Schema}."""
+    base, donor, units = ABLATION_VARIANTS[variant]
+    return swap_units(schemas[base], schemas[donor], units)
 
 
 def _triples(lines):
