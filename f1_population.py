@@ -368,15 +368,20 @@ def render_ntriples(entities: pd.DataFrame, assertions: pd.DataFrame, schema: Sc
         if shape is None:
             set_aside.add(prop)
             continue
-        if shape.domain != NS + cls:
-            raise ValueError(f"{prop}: schema domain {shape.domain} but subject class {cls}")
-        obj = _literal(value, shape.datatype) if shape.datatype else f"<{value}>"
-        if shape.hop is None:
-            lines.add(f"<{subject}> <{shape.predicate}> {obj} .")
-        else:
-            hop_class, hop_predicate = shape.hop
-            node = f"{subject}/{prop}"
-            lines.add(f"<{subject}> <{shape.predicate}> <{node}> .")
-            lines.add(f"<{node}> <{RDF_TYPE}> <{hop_class}> .")
-            lines.add(f"<{node}> <{hop_predicate}> {obj} .")
+        lines.update(assertion_lines(subject, cls, prop, value, shape))
     return sorted(lines), set_aside
+
+
+def assertion_lines(subject: str, cls: str, prop: str, value: str, shape: PropertyShape) -> list[str]:
+    """The N-Triples lines of one assertion along its schema shape: one triple, or for a SULO
+    path the intermediate node <subject>/<property>, its rdf:type and the edge to the value."""
+    if shape.domain != NS + cls:
+        raise ValueError(f"{prop}: schema domain {shape.domain} but subject class {cls}")
+    obj = _literal(value, shape.datatype) if shape.datatype else f"<{value}>"
+    if shape.hop is None:
+        return [f"<{subject}> <{shape.predicate}> {obj} ."]
+    hop_class, hop_predicate = shape.hop
+    node = f"{subject}/{prop}"
+    return [f"<{subject}> <{shape.predicate}> <{node}> .",
+            f"<{node}> <{RDF_TYPE}> <{hop_class}> .",
+            f"<{node}> <{hop_predicate}> {obj} ."]

@@ -600,24 +600,25 @@ def runs_ended_by_epoch_cap(results, epochs, patience):
     return trained[trained['best_epoch_seeds'].map(lambda e: _ended_by_epoch_cap(e, epochs, patience))]
 
 
-def finished_tuning_results(csv_path, grid_dim, grid_depth, tuning_seeds, final_seeds):
+def finished_tuning_results(csv_path, grid_dim, grid_depth, tuning_seeds, final_seeds, metric='val_roc_auc'):
     """
     The results CSV of a KG whose search already finished under this protocol, or None if it
     has to be (re-)run: the file is missing, from the single-seed protocol (no per-seed
     columns), from another dim x depth grid or seed count, or lacks a phase-4 row for any
     final seed (the run was interrupted). Other constants are not checked, so move the CSVs
     away after changing one. Lets a crashed run resume at the first unfinished KG.
+    metric: the selection score's column ('val_mrr' for link prediction).
     """
     if not os.path.exists(csv_path):
         return None
     df = pd.read_csv(csv_path)
-    if 'val_roc_auc_seeds' not in df.columns:
+    if f'{metric}_seeds' not in df.columns:
         return None
     phase1 = df[df['phase'] == '1_Architecture']
     grid = {(l, d) for l in grid_depth for d in (grid_dim if l > 1 else [None])}
     logged = {(int(l), None if pd.isna(d) else int(d)) for l, d in zip(phase1['layers'], phase1['hidden_dim'])}
     trained = df[(df['runtime_sec'] > 0) & (df['status'] == 'ok') & df['phase'].str.match(r'[123]_')]
-    seed_counts = {len(str(v).split(';')) for v in trained['val_roc_auc_seeds']}
+    seed_counts = {len(str(v).split(';')) for v in trained[f'{metric}_seeds']}
     final = df.loc[df['phase'] == '4_Final_Test_Evaluation', 'seed']
     if logged != grid or seed_counts - {len(tuning_seeds)} or sorted(final.astype(int)) != sorted(final_seeds):
         return None
@@ -1001,18 +1002,19 @@ def run_ablation_variant(model_factory, kg_data, variant, hidden_list, bases, lr
     return pd.DataFrame(rows)
 
 
-def summarize_ablation(results, controls):
+def summarize_ablation(results, controls, metrics=ABLATION_METRICS, delta_metrics=('val_roc_auc', 'test_roc_auc')):
     """
-    Mean ± std per variant over its seeds, plus each mean's difference from its control's
-    (controls: variant -> control variant; a control is its own control, so its deltas are 0).
-    Variants keep the order of `controls`.
+    Mean ± std of `metrics` per variant over its seeds, plus the difference of each of
+    `delta_metrics`' means from its control's (controls: variant -> control variant; a control is
+    its own control, so its deltas are 0). Variants keep the order of `controls`. The defaults are
+    node prediction's; link prediction passes its MRR columns.
     """
-    stats = results.groupby('variant')[ABLATION_METRICS].agg(['mean', 'std'])
+    stats = results.groupby('variant')[list(metrics)].agg(['mean', 'std'])
     stats.columns = [f'{m}_{s}' for m, s in stats.columns]
     stats = stats.reindex(list(controls))
     stats.insert(0, 'control', [controls[v] for v in stats.index])
     stats.insert(1, 'n_seeds', results.groupby('variant').size().reindex(stats.index))
-    for m in ('val_roc_auc', 'test_roc_auc'):
+    for m in delta_metrics:
         stats[f'delta_{m}'] = stats[f'{m}_mean'] - stats[f'{m}_mean'].reindex(stats['control']).values
     return stats
 
