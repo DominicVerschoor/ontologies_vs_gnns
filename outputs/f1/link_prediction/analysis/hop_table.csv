@@ -1,0 +1,8 @@
+,Ad-hoc,Hybrid,Pure
+"LP team: the driver's literals, from the entry",2,2,4
+"LP team: the team's literals, from a candidate",1,1,2
+"LP position: a session's rank, from the entry",3,4,4
+"LP position: the rank, from a candidate",1,2,2
+"LP circuit: the race's literals, from the race",1,1,2
+"LP circuit: the circuit's literals, from a candidate",1,1,2
+NP: the entry's own grid rank,2,3,3

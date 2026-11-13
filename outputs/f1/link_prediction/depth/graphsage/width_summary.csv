@@ -1,0 +1,10 @@
+,,test_mrr,test_team_mrr,test_position_mrr,test_circuit_mrr
+"main runs (own winners, train+val retrain)",Ad-hoc,0.3344,0.3973,0.2576,0.555
+"main runs (own winners, train+val retrain)",Hybrid,0.2921,0.3291,0.2508,0.3376
+"main runs (own winners, train+val retrain)",Hybrid − Ad-hoc,-0.0423,-0.0683,-0.0068,-0.2174
+"shared Hybrid winner (64-d, the ablation's controls)",Ad-hoc,0.2831,0.3175,0.2453,0.3109
+"shared Hybrid winner (64-d, the ablation's controls)",Hybrid,0.2905,0.3274,0.2512,0.2902
+"shared Hybrid winner (64-d, the ablation's controls)",Hybrid − Ad-hoc,0.0073,0.0099,0.0058,-0.0207
+shared Ad-hoc winner (256-d),Ad-hoc,0.3069,0.3544,0.2472,0.5117
+shared Ad-hoc winner (256-d),Hybrid,0.3343,0.3998,0.2519,0.6218
+shared Ad-hoc winner (256-d),Hybrid − Ad-hoc,0.0274,0.0454,0.0047,0.1101

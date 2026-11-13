@@ -1,70 +1,92 @@
-# Node Prediction
+# Node prediction
 
-Node-classification pipeline: predicting customer-case satisfaction (a binary survey rating) from
-the knowledge graph, plus the non-graph tabular baseline used for comparison. Every notebook here
-processes **one schema (`base` or `sulo`) per kernel session** — set `SCHEMA_LABEL`/`schema_label`
-at the top and re-run for the second schema in a fresh session, unless noted otherwise below.
+Binary classification of `RaceEntry` nodes: did the entry score championship points (`hasRacePoints`,
+points > 0, 31.3% positive)? The same code runs on all three graphs (`adhoc`, `hybrid_sulo`, `pure_sulo`).
 
-## Files
+## Data (`f1_node_data.py`, repo root)
 
-- **`gnn_tools.py`** — shared train/eval/ablation infrastructure used by both `RGCN.ipynb` and
-  `graph_sage.ipynb`. Includes `train_model`/`evaluate_test_set` (core PyG `NeighborLoader`
-  train/eval loops), `run_sequential_optimization_with_verification` (greedy hyperparameter search
-  with a verification grid and final held-out test evaluation), `evaluate_final_test_row` /
-  `run_final_test_evaluation` (standalone re-run of just the final test evaluation with
-  already-tuned hyperparameters), `evaluate_ablation_configuration` / `run_ablation_run` (relation
-  ablation studies with class-specific metrics, PR-AUC, and the SNR/RID diagnostics), `run_k_sweep`
-  (neighbor-sampling-depth sweep with an OOM retry ladder and resume support), and the
-  `get_graph_mask` / `mask_graph_topology` / `compute_entity_reuse_stats` helpers used by the
-  ablation studies.
+- **Masking.** `masked_lines` removes the label and the race outcomes (`hasFinishPosition`, `hasStatus`,
+  `hasLapsCompleted`) from the assertions **before** rendering, for every entry, not only test entries. The
+  finish position alone gives ROC-AUC 0.985, and a test entry's finish position would otherwise follow from
+  its race-mates'. Because masking happens before rendering, a Pure SULO path disappears together with its
+  intermediate node. Facts known before the race stay: grid, qualifying, sprint and practice results.
+- **Labels** come from the assertions (`race_entry_labels`), never from a graph.
+- **Split.** `stratified_split`: 80/10/10, stratified by label, `random_state=42`, computed once on IRIs and
+  shared by every graph and both models (21,625 / 2,703 / 2,704). A temporal split was not used, because the
+  label base rate and the available session data change by era.
+- **Graph.** `build_graph` adds an inverse edge for every triple, which R-GCN gets as its own relation type
+  (Schlichtkrull et al. 2018). `rdf:type` edges stay.
+- **Features.** `node_features` never reads IRI text:
+  - an instance is described by an embedding of its `rdf:type` set
+  - a class node by its class
+  - a numeric, boolean or date literal by its datatype embedding × its standardised value
+  - a string literal by one learnable embedding per distinct string
 
-- **`transE.ipynb`** — trains a TransE knowledge-graph embedding model (pykeen) directly on the KG
-  triples, with no node features. Used both as a node-classification baseline (a downstream
-  classifier trained on the resulting Case embeddings) and reused by `link_prediction/`.
+  A degree feature is added.
+- **Ablation schemas.** `ABLATION_UNITS` lists the five enrichment units (`sulo_typing`, `precedesRace`,
+  `precedesSeason`, `hasTeamMember`, `rank_reification`). `ablation_schema` / `swap_units` build the 12
+  `ABLATION_VARIANTS`: `hybrid_minus_<unit>`, `adhoc_plus_<unit>`, and the two controls. A variant is a
+  schema, so masking and splits go through the normal path.
 
-- **`RGCN.ipynb`** — main R-GCN node-classification pipeline: builds the PyG graph from the `.nt`
-  file and BERT embeddings, then runs hyperparameter tuning, feature/relation ablation, and a
-  K-hop depth sweep.
+## Code
 
-- **`graph_sage.ipynb`** — main GraphSAGE node-classification pipeline, structurally parallel to
-  `RGCN.ipynb` (same `model_factory`/`base_model_factory`/`sulo_model_factory`/
-  `k_sweep_model_factory` pattern) so the two stay easy to compare and any shared-behavior change
-  should go in `gnn_tools.py` rather than being duplicated in both notebooks.
+- **`models.py`**
+  - `RGCNModel` and `GraphSAGEModel` share `NodeEncoder` and the same `forward`, so the training loop never
+    branches on the architecture.
+  - R-GCN uses basis decomposition and runs each layer under gradient checkpointing, without which Pure SULO
+    does not fit in memory at 256-d × 3. Logits and gradients are unchanged (tested).
+  - GraphSAGE is GraphSAGE-mean (`aggr='mean'`, `project=False`), as in the original `MeanAggregator`.
+- **`gnn_tools.py`**
+  - **Training.** `train_model` trains full-batch: each epoch is one forward pass over the whole graph and
+    one Adam step. Early stopping uses validation ROC-AUC with patience 50 and a 50-epoch warm-up
+    (`start_from_epoch`), and the best weights are restored. `train_final_model` retrains on train + val,
+    and `evaluate_test_set` scores the test set.
+  - **Search.** `run_sequential_optimization_with_verification` runs four phases. Every configuration runs
+    on tuning seeds 0–2 and is scored by mean val ROC-AUC (`run_config_over_seeds`).
+    1. A joint hidden-dim × depth grid.
+    2. Greedy R-GCN bases → learning rate → weight decay.
+    3. A 2×2 verification grid.
+    4. The winner is retrained on train + val for its median best epoch + 1 and tested once per final seed
+       0–4 (`evaluate_final_test_row`).
 
-- **`RGCN_k_sweep.ipynb`** — standalone K-hop depth sweep containing both schemas in one notebook
-  (unlike every other notebook's one-schema-per-run convention), for isolated re-runs without
-  repeating full hyperparameter tuning.
+    Failed and out-of-memory configurations are logged, not fatal. `finished_tuning_results` lets a notebook
+    resume after a crash.
+  - **Ablation.** `run_ablation_variant` / `summarize_ablation`: every variant uses the tuned Hybrid
+    configuration. Per seed, it early-stops on validation and scores the best checkpoint on test.
+  - **K-sweep.** `tuned_winner` / `run_k_sweep` / `summarize_k_sweep`: each graph keeps its own tuned
+    configuration and only the depth K ∈ {1, 2, 3, 4} changes. The tuned K = 3 rows are reused.
+  - **Checks.** `runs_ended_by_epoch_cap` flags seeds whose best epoch is within `PATIENCE` of the 400-epoch
+    cap.
 
-- **`automl_tabular_baseline.ipynb`** — independent of the KG; builds a flat, one-row-per-case
-  feature table directly from the raw source tables (case/account/vehicle fields, aggregated
-  Task/CaseHistory counts, raw text embeddings) and trains XGBoost, using the same case split as
-  `transE.ipynb` for a fair comparison.
+## Notebooks, in run order
 
-## Running order and outputs
+| Notebook | What it does | Output (`outputs/f1/node_prediction/`) |
+|---|---|---|
+| `RGCN.ipynb`, `graph_sage.ipynb` | E1: shuffled-label check on the real graphs, full search per graph, final test over 5 seeds | `{rgcn,graphsage}/<kg>_sequential_tuning_results.csv` |
+| `RGCN_ablation.ipynb`, `graph_sage_ablation.ipynb` | E2: the 12 ablation graphs at the Hybrid winner, shuffled-label check on all 12 | `ablation/{rgcn,graphsage}/` |
+| `RGCN_k_sweep.ipynb`, `graph_sage_k_sweep.ipynb` | E3: K = 1–4 per graph at its own winner | `k_sweep/{rgcn,graphsage}/k_sweep_results.csv`, `k_sweep_summary.csv`, plot |
+| `RGCN_ablation_k2.ipynb` | E3: controls and `rank_reification` variants at K = 2 (R-GCN) | `ablation_k2/rgcn/` |
 
-1. **`transE.ipynb`**: **Outputs:** trained entity embeddings (`*_final_transe_embeddings.pt`),
-   tuning results CSV, the canonical case-level train/val/test split (`transe/{schema}_split.pt`)
-   reused by `automl_tabular_baseline.ipynb`, masked training triples files
-   (`merged_{schema}_training.nt`).
+The ablation and K-sweep notebooks read the tuning CSVs, so the main notebooks run first. `RGCN.ipynb`
+and `graph_sage.ipynb` are generated from one template and differ only in the model. The same holds for
+each ablation pair and each K-sweep pair. Shared logic lives in the `.py` modules.
 
-2. **`RGCN.ipynb`** / **`graph_sage.ipynb`**: **Outputs:** `{schema}_vars.pt` (graph tensors +
-   splits + vector table), `{schema}_ontology_enums.pt`, hyperparameter tuning results CSV
-   (`{rgcn,graphsage}/{schema}_sequential_tuning_results.csv`), ablation study CSV
-   (`{schema}_ablation_study_results.csv`), K-sweep CSV (`{schema}_k_sweep_results.csv`), trained
-   model checkpoints.
+Earlier runs are kept for reference and are not part of the reported results:
 
-3. **`RGCN_k_sweep.ipynb`** (optional, isolated re-run) — **Outputs:** K-sweep results CSV per
-   schema, same format as `RGCN.ipynb`'s own K-sweep section.
-
-4. **`automl_tabular_baseline.ipynb`**: **Outputs:** `ds_ccc.kg_automl_baseline_table`,
-   `tabular_baseline_results.csv`.
+- `rgcn_single_seed/`: the first run, with one tuning seed.
+- `rgcn_sampled/`: neighbour sampling instead of full-batch training. Sampling almost never drew a
+  `Position` hub's single rank edge, so the model could not see the grid position.
+- `{rgcn,graphsage}_no_warmup/`: tuning without the early-stopping warm-up. Seeds kept validation spikes
+  from the first epochs as their best.
 
 ## Notes
 
-- **`num_workers=0` is required** on every PyG `NeighborLoader` in `gnn_tools.py` — set
-  deliberately to fix a host-RAM SIGKILL on single-node clusters and should not be reverted
-  without a reason.
-- Call `cleanup()` (`gc.collect()` + `torch.cuda.empty_cache()`) after every model train/eval
-  cycle inside a loop (`run_k_sweep`, `run_sequential_optimization_with_verification`) — GPU
-  memory is not freed automatically between iterations. Models must be moved `.cpu()` and
-  `del`eted before `cleanup()` for the cache to actually release.
+- The wall-clock times of R-GCN and GraphSAGE are not comparable, because only R-GCN checkpoints its
+  layers.
+- In loops, move every model `.cpu()`, `del` it, and call `cleanup()` before the next iteration, or GPU
+  memory is not released.
+- Tests: `tests/test_f1_node_data.py`, `tests/test_models.py` and `tests/test_gnn_tools.py`. They cover:
+  - leakage: a random-label canary, and flipping val/test labels leaves training bit-identical
+  - a hub-identity regression: R-GCN must read a hub's single rank edge among 1,250 neighbours
+  - seeded reproducibility and checkpointing equivalence
+  - the search: phases, seed aggregation, reuse, out-of-memory handling, the epoch-cap rule, resume

@@ -1,0 +1,5 @@
+variant,control,n_seeds,val_roc_auc_mean,val_roc_auc_std,test_roc_auc_mean,test_roc_auc_std,test_pr_auc_mean,test_pr_auc_std,test_f1_mean,test_f1_std,test_accuracy_mean,test_accuracy_std,delta_val_roc_auc,delta_test_roc_auc
+hybrid_sulo,hybrid_sulo,5,0.8053,0.0027,0.8364,0.0034,0.6916,0.006,0.588,0.0151,0.7737,0.0007,0.0,0.0
+hybrid_minus_rank_reification,hybrid_sulo,5,0.8377,0.0017,0.8675,0.002,0.7378,0.003,0.6814,0.0106,0.806,0.0029,0.0325,0.0311
+adhoc,adhoc,5,0.8385,0.0027,0.8684,0.0025,0.7394,0.0039,0.6621,0.0185,0.8054,0.0053,0.0,0.0
+adhoc_plus_rank_reification,adhoc,5,0.8051,0.0018,0.8368,0.0012,0.6897,0.0078,0.5872,0.0184,0.7737,0.0027,-0.0334,-0.0316

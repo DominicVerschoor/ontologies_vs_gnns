@@ -1,0 +1,7 @@
+variant,control,n_seeds,val_mrr_mean,val_mrr_std,test_mrr_mean,test_mrr_std,test_team_mrr_mean,test_team_mrr_std,test_position_mrr_mean,test_position_mrr_std,test_circuit_mrr_mean,test_circuit_mrr_std,delta_val_mrr,delta_test_mrr,delta_test_team_mrr,delta_test_position_mrr,delta_test_circuit_mrr
+adhoc_K3,adhoc_K3,5,0.5858,0.0361,0.5758,0.0352,0.7184,0.0102,0.409,0.0761,0.9166,0.0169,0.0,0.0,0.0,0.0,0.0
+adhoc_K4,adhoc_K3,5,0.5968,0.0147,0.5861,0.0167,0.6987,0.0242,0.4524,0.0168,0.9004,0.0154,0.011,0.0103,-0.0197,0.0434,-0.0163
+hybrid_sulo_K3,hybrid_sulo_K3,5,0.5156,0.0032,0.5102,0.0047,0.7151,0.0074,0.2738,0.0028,0.9279,0.0079,0.0,0.0,0.0,0.0,0.0
+hybrid_sulo_K4,hybrid_sulo_K3,5,0.5447,0.0461,0.5396,0.0442,0.7097,0.0053,0.3428,0.0896,0.8967,0.0073,0.0291,0.0294,-0.0054,0.069,-0.0313
+pure_sulo_K3,pure_sulo_K3,5,0.2981,0.0084,0.2871,0.0124,0.3163,0.0124,0.241,0.0057,0.6205,0.2309,0.0,0.0,0.0,0.0,0.0
+pure_sulo_K4,pure_sulo_K3,5,0.3851,0.0229,0.3722,0.0245,0.4815,0.0406,0.2586,0.0083,0.3162,0.1637,0.087,0.0851,0.1652,0.0176,-0.3043

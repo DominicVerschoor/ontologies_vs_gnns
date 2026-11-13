@@ -1,0 +1,6 @@
+,test_roc_auc,test_roc_auc,test_pr_auc,test_pr_auc,test_f1,test_f1,test_accuracy,test_accuracy,test_class0_f1,test_class0_f1,test_class1_f1,test_class1_f1
+,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std
+kg,,,,,,,,,,,,
+adhoc,0.8421,0.0012,0.7045,0.0028,0.5985,0.0451,0.7734,0.0039,0.8415,0.0054,0.5985,0.0451
+hybrid_sulo,0.8392,0.0022,0.6832,0.0034,0.5792,0.0568,0.7722,0.0058,0.8427,0.0088,0.5792,0.0568
+pure_sulo,0.7989,0.0033,0.6179,0.0024,0.4569,0.1063,0.7406,0.0106,0.8283,0.0025,0.4569,0.1063

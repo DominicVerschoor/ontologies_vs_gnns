@@ -1,0 +1,7 @@
+,,layers K,team test MRR,position test MRR,circuit test MRR
+rgcn,Ad-hoc,3.0,0.727,0.405,0.934
+rgcn,Hybrid,3.0,0.721,0.277,0.934
+rgcn,Pure,2.0,0.267,0.235,0.931
+graphsage,Ad-hoc,3.0,0.397,0.258,0.555
+graphsage,Hybrid,3.0,0.329,0.251,0.338
+graphsage,Pure,3.0,0.212,0.216,0.286

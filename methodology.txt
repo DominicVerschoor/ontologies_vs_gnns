@@ -1,0 +1,457 @@
+% Preamble requirements for this chapter:
+%   \usepackage{amsmath,amssymb,amsthm,booktabs,array,tikz}
+%   \usetikzlibrary{positioning,arrows.meta}
+%   \theoremstyle{definition}
+%   \newtheorem{definition}{Definition}[section]
+
+\section{Methodology}
+\label{sec:methodology}
+
+This chapter describes how the three knowledge graphs are built from the F1 data and how they are compared. Section~\ref{sec:method_pipeline} gives an overview of the pipeline. Sections~\ref{sec:method_data} to~\ref{sec:method_distance} define the data, the graphs, the three constructions, and the distance between a prediction target and its evidence. Section~\ref{sec:method_tasks} defines the two prediction tasks, Section~\ref{sec:method_features} the model input, Section~\ref{sec:method_models} the models, and Section~\ref{sec:method_training} training, tuning, and evaluation. The experiments that answer the research questions are described in Section~\ref{sec:experimental_design}.
+
+%-------------------------------------------------------------------------
+\subsection{Pipeline}
+\label{sec:method_pipeline}
+
+Figure~\ref{fig:pipeline} shows the pipeline. All graphs start from the same source tables. The only step that differs between the constructions is the schema in step~3; every other step is the same for every graph.
+
+\begin{enumerate}
+    \item \textbf{Data.} The Kaggle F1 tables are restricted to the scope of the study (Section~\ref{sec:method_data}).
+    \item \textbf{Assertions.} The tables are converted once into a set of facts that does not depend on any schema (Definition~\ref{def:assertions}).
+    \item \textbf{Schemas.} Each construction is a schema that states how each fact is written as triples (Section~\ref{sec:method_constructions}). The ablation variants are also schemas.
+    \item \textbf{Rendering.} Each schema turns the assertions into an RDF graph (Definition~\ref{def:rendering}).
+    \item \textbf{Task preparation.} Facts that would reveal the answer are removed and the data are split (Section~\ref{sec:method_tasks}).
+    \item \textbf{Graph tensors and features.} The RDF graph becomes a typed edge list with node features (Section~\ref{sec:method_features}).
+    \item \textbf{Models.} R-GCN or GraphSAGE encodes the graph and a task head makes the prediction (Section~\ref{sec:method_models}).
+    \item \textbf{Tuning and evaluation.} Every combination of graph, model, and task is tuned with the same search and evaluated on the same test set (Section~\ref{sec:method_training}).
+\end{enumerate}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        node distance=7mm and 5mm,
+        box/.style={draw, rounded corners, align=center, text width=2.7cm,
+                    minimum height=1.5cm, font=\small},
+        arrow/.style={-{Stealth}, thick}
+    ]
+        % Row 1: from data to graphs
+        \node[box] (data) {\textbf{1. Data}\\Kaggle F1 tables};
+        \node[box, right=of data] (assert) {\textbf{2. Assertions}\\$\mathcal{A}$, shared\\by all graphs};
+        \node[box, right=of assert] (schema) {\textbf{3. Schemas}\\Ad-hoc, Hybrid,\\Pure SULO,\\ablation variants};
+        \node[box, right=of schema] (render) {\textbf{4. Rendering}\\one RDF graph\\per schema};
+        % Row 2: from graphs to scores
+        \node[box, below=of render] (task) {\textbf{5. Task preparation}\\NC: masking, split\\LP: race split,\\hidden facts};
+        \node[box, left=of task] (tensor) {\textbf{6. Tensors}\\typed edges,\\node features};
+        \node[box, left=of tensor] (model) {\textbf{7. Models}\\R-GCN or\\GraphSAGE\\+ task head};
+        \node[box, left=of model] (eval) {\textbf{8. Tuning and}\\\textbf{evaluation}\\ROC-AUC, MRR};
+        % Row 3: experiments
+        \node[box, text width=12.9cm, minimum height=1cm, anchor=north west]
+            at ([yshift=-7mm]eval.south west)
+            (exp) {\textbf{Experiments:} E1 main comparison (RQ1, RQ2) \quad
+                   E2 enrichment ablation (RQ1a) \quad E3 depth (RQ3)};
+
+        \draw[arrow] (data) -- (assert);
+        \draw[arrow] (assert) -- (schema);
+        \draw[arrow] (schema) -- (render);
+        \draw[arrow] (render) -- (task);
+        \draw[arrow] (task) -- (tensor);
+        \draw[arrow] (tensor) -- (model);
+        \draw[arrow] (model) -- (eval);
+        \draw[arrow] (eval.south) -- (eval.south |- exp.north);
+    \end{tikzpicture}
+    \caption{Pipeline from the source tables to the experiments. Only step~3 differs between the graph constructions. NC: node classification; LP: link prediction.}
+    \label{fig:pipeline}
+\end{figure}
+
+%-------------------------------------------------------------------------
+\subsection{Data}
+\label{sec:method_data}
+
+The data are version~9 of the Kaggle Formula 1 World Championship dataset \cite{rao_formula1_kaggle}. The scope covers every season from 1950 to 2026, with two exclusions. The Indianapolis 500 (1950--1960) counted for the championship but was run under separate rules with a largely separate field. Shared drives, in which one driver has two results in the same race, are removed because a race entry is identified by its race and driver. Missing values are not imputed: a missing value only omits its own fact.
+
+The scope contains 77 seasons, 1,153 races, 78 circuits, 761 drivers, 182 teams, 27,032 race entries, and 13,782 session results. A \texttt{RaceEntry} is one row of the race results table. A \texttt{SessionResult} is a qualifying result (from 1994), a sprint result (from 2021), or a practice result (2025--2026). Positions are shared \texttt{Position} entities, one per observed rank (34 in total). All entries that started third therefore point to the same \texttt{Position} node.
+
+%-------------------------------------------------------------------------
+\subsection{Knowledge Graphs, Assertions, and Schemas}
+\label{sec:method_graphs}
+
+The constructions are defined in three steps: a graph, a set of facts that does not depend on a graph, and a schema that turns these facts into a graph.
+
+\begin{definition}[Knowledge graph]
+\label{def:kg}
+Let \(\mathcal{E}\) be a set of entities, \(\mathcal{C}\) a set of classes, \(\mathcal{L}\) a set of literals, and \(\mathcal{Q}\) a set of predicates that contains \texttt{rdf:type}. A knowledge graph is a set of triples
+\[
+G \subseteq \mathcal{E} \times \mathcal{Q} \times (\mathcal{E} \cup \mathcal{C} \cup \mathcal{L}).
+\]
+Its node set \(V(G)\) contains every subject and object of its triples. Class membership is stated by a triple \((e, \texttt{rdf:type}, c)\), so classes are nodes as well.
+\end{definition}
+
+Every entity \(e\) has one domain class \(\mathrm{cls}(e) \in \mathcal{C}_{\mathrm{F1}}\), where \(\mathcal{C}_{\mathrm{F1}} = \{\texttt{Season},\allowbreak \texttt{Race},\allowbreak \texttt{Circuit},\allowbreak \texttt{RaceEntry},\allowbreak \texttt{SessionResult},\allowbreak \texttt{Driver},\allowbreak \texttt{Team},\allowbreak \texttt{Position}\}\).
+
+\begin{definition}[Assertions]
+\label{def:assertions}
+Let \(\mathcal{P}\) be the set of domain properties, such as \texttt{hasDriver} or \texttt{hasRaceName}. The assertion set
+\[
+\mathcal{A} \subseteq \mathcal{E} \times \mathcal{P} \times (\mathcal{E} \cup \mathcal{L})
+\]
+contains one assertion \((s, p, v)\) for each fact in the scope: entity \(s\) has value \(v\) for property \(p\), where \(v\) is an entity or a literal.
+\end{definition}
+
+\(\mathcal{A}\) is built once from the tables and is shared by all constructions. It states which facts exist, not how they are stored.
+
+\begin{definition}[Schema]
+\label{def:schema}
+A schema is a pair \(S = (\pi_S, \sigma_S)\). The partial map \(\pi_S\) assigns each property \(p\) that the schema covers one of two shapes:
+\begin{itemize}
+    \item a \emph{direct} shape \(\langle q \rangle\): the fact is one edge with predicate \(q\);
+    \item a \emph{path} shape \(\langle q_1, c, q_2 \rangle\): the fact is an edge with predicate \(q_1\) to an intermediate node of class \(c\), followed by an edge with predicate \(q_2\) from that node to the value.
+\end{itemize}
+The partial map \(\sigma_S : \mathcal{C}_{\mathrm{F1}} \to \mathcal{C}_{\mathrm{SULO}}\) assigns a domain class its SULO superclass.
+\end{definition}
+
+The schemas were created with the SULO-Compliant Schema Builder \cite{sulo_builder}. A path shape is stated in the schema file as the domain of the property. In Pure SULO, for example, the domain of \texttt{hasRacePoints} is the class
+\[
+\texttt{RaceEntry} \sqcap \exists\, \texttt{sulo:hasFeature}.(\texttt{sulo:Quantity} \sqcap \exists\, \texttt{sulo:hasValue}.\texttt{xsd:boolean}),
+\]
+from which the shape \(\langle \texttt{sulo:hasFeature}, \texttt{sulo:Quantity}, \texttt{sulo:hasValue} \rangle\) is read. No triple shape is written by hand.
+
+\begin{definition}[Rendering]
+\label{def:rendering}
+The graph \(\mathrm{render}(\mathcal{A}, S)\) contains
+\begin{enumerate}
+    \item \((e, \texttt{rdf:type}, \mathrm{cls}(e))\) for every entity \(e\), and also \((e, \texttt{rdf:type}, \sigma_S(\mathrm{cls}(e)))\) if \(\sigma_S\) is defined for \(\mathrm{cls}(e)\);
+    \item for every assertion \((s, p, v) \in \mathcal{A}\) for which \(\pi_S(p)\) is defined:
+    \[
+    \begin{cases}
+        (s, q, v) & \text{if } \pi_S(p) = \langle q \rangle,\\
+        (s, q_1, n_{s,p}),\ (n_{s,p}, \texttt{rdf:type}, c),\ (n_{s,p}, q_2, v) & \text{if } \pi_S(p) = \langle q_1, c, q_2 \rangle,
+    \end{cases}
+    \]
+    where \(n_{s,p}\) is a new node for subject \(s\) and property \(p\).
+\end{enumerate}
+Assertions whose property the schema does not cover are not rendered.
+\end{definition}
+
+Three consequences follow. First, two graphs render the same facts for every property that both schemas cover, so every difference between two graphs is a difference between their schemas. Second, an intermediate node belongs to one subject and property, while value entities such as \texttt{Position} nodes remain shared. Third, two properties with the same direct shape can produce the same triple. In Pure SULO, start and finish position are both \(\langle \texttt{sulo:hasFeature} \rangle\) to a \texttt{Position} node, so an entry that started and finished third has a single triple for both facts.
+
+%-------------------------------------------------------------------------
+\subsection{Graph Constructions}
+\label{sec:method_constructions}
+
+The three constructions are schemas over the same \(\mathcal{A}\) (Figures~\ref{fig:adhoc_schema}--\ref{fig:pure_sulo_schema}).
+
+\begin{definition}[Ad-hoc]
+\label{def:adhoc}
+Let \(\mathcal{P}_A \subset \mathcal{P}\) be the 29 properties of the manually designed F1 schema. The Ad-hoc schema \(S_A\) has \(\pi_A(p) = \langle p \rangle\) for every \(p \in \mathcal{P}_A\), and \(\sigma_A\) is undefined for every class.
+\end{definition}
+
+In Ad-hoc, every fact is one edge whose predicate is the property itself, and every instance is typed only with its domain class.
+
+\begin{definition}[Hybrid]
+\label{def:hybrid}
+The Hybrid schema \(S_H\) is \(S_A\) extended with five enrichment units and one renaming:
+\begin{enumerate}
+    \item \textbf{SULO typing}: \(\sigma_H\) maps each domain class to its SULO superclass (Table~\ref{tab:sulo_classes}). Each domain class is declared a subclass of its SULO class, and each instance is typed with both.
+    \item \textbf{\texttt{precedesRace}}: \(\langle \texttt{sulo:precedes} \rangle\) from each race to the next race of the same season.
+    \item \textbf{\texttt{precedesSeason}}: \(\langle \texttt{sulo:precedes} \rangle\) from each season to the next.
+    \item \textbf{\texttt{hasTeamMember}}: \(\langle \texttt{sulo:hasItem} \rangle\) from a team to every driver who drove for it at least once.
+    \item \textbf{Rank reification}: \(\pi_H(\texttt{hasRank}) = \langle \texttt{sulo:isReferredToIn},\allowbreak \texttt{sulo:InformationObject},\allowbreak \texttt{sulo:hasValue} \rangle\) instead of \(\langle \texttt{hasRank} \rangle\).
+\end{enumerate}
+The renaming replaces \texttt{heldAtCircuit} with \texttt{isInCircuit}, with shape \(\langle \texttt{sulo:isIn} \rangle\).
+\end{definition}
+
+Units~1--4 add information that can be derived from \(\mathcal{A}\): the SULO type follows from the domain class, \texttt{precedes} from season and round, and team membership from the race entries. Unit~5 changes how an existing fact is stored. The renaming keeps the same edges under a new predicate name, so it is not an enrichment unit.
+
+\begin{definition}[Pure SULO]
+\label{def:pure}
+The Pure SULO schema \(S_P\) has \(\sigma_P = \sigma_H\) and renders the same assertions as \(S_H\), but every predicate in \(\pi_P\) is a SULO predicate (Table~\ref{tab:pure_shapes}).
+\end{definition}
+
+Pure SULO uses three kinds of shape. Links between entities become one SULO edge. Participation follows the PRO pattern: a race entry is linked to its driver or team through a \texttt{sulo:Role} node. Literal values follow the SOLID pattern: the value is stored on an intermediate information object, quantity, or time node through \texttt{sulo:hasValue} \cite{dumontier2025sulo}.
+
+Hybrid and Pure SULO therefore render the same facts and differ only in how they store them. Ad-hoc lacks the four derived properties and the SULO typing, and stores ranks as direct literals.
+
+\begin{table}[htbp]
+    \centering
+    \caption{SULO superclass of each domain class (\(\sigma_H = \sigma_P\)).}
+    \label{tab:sulo_classes}
+    \begin{tabular}{ll}
+        \toprule
+        SULO class & Domain classes \\
+        \midrule
+        \texttt{sulo:Process} & \texttt{Season}, \texttt{Race}, \texttt{RaceEntry} \\
+        \texttt{sulo:SpatialObject} & \texttt{Circuit}, \texttt{Driver} \\
+        \texttt{sulo:Collection} & \texttt{Team} \\
+        \texttt{sulo:InformationObject} & \texttt{SessionResult} \\
+        \texttt{sulo:Quality} & \texttt{Position} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Property shapes in Pure SULO. In Ad-hoc every property is a direct edge with its own name. Hybrid equals Ad-hoc except for the enrichment units and the renaming of Definition~\ref{def:hybrid}.}
+    \label{tab:pure_shapes}
+    \small
+    \begin{tabular}{>{\raggedright\arraybackslash}p{6.2cm}l}
+        \toprule
+        Properties & Shape in Pure SULO \\
+        \midrule
+        \texttt{hasRaceEntry} & \(\langle \texttt{hasPart} \rangle\) \\
+        \texttt{partOfSeason} & \(\langle \texttt{isPartOf} \rangle\) \\
+        \texttt{heldAtCircuit} & \(\langle \texttt{isIn} \rangle\) \\
+        \texttt{hasSessionResult} & \(\langle \texttt{isReferredToIn} \rangle\) \\
+        \texttt{hasStartPosition}, \texttt{hasFinishPosition}, \texttt{hasPosition} & \(\langle \texttt{hasFeature} \rangle\) \\
+        \texttt{precedesRace}, \texttt{precedesSeason} & \(\langle \texttt{precedes} \rangle\) \\
+        \texttt{hasTeamMember} & \(\langle \texttt{hasItem} \rangle\) \\
+        \texttt{hasDriver}, \texttt{hasTeam} & \(\langle \texttt{hasParticipant}, \texttt{Role}, \texttt{isFeatureOf} \rangle\) \\
+        \texttt{hasRaceName}, \texttt{hasCircuitName}, \texttt{hasDriverName}, \texttt{hasTeamName}, \texttt{hasRank} & \(\langle \texttt{isReferredToIn}, \texttt{InformationObject}, \texttt{hasValue} \rangle\) \\
+        \texttt{hasCountry}, \texttt{hasLocation}, \texttt{hasNationality}, \texttt{hasTeamNationality}, \texttt{hasSessionType}, \texttt{hasStatus} & \(\langle \texttt{hasFeature}, \texttt{InformationObject}, \texttt{hasValue} \rangle\) \\
+        \texttt{hasRound}, \texttt{hasLapsCompleted}, \texttt{hasSessionLapsCompleted}, \texttt{hasRacePoints}, \texttt{hasSessionPoints} & \(\langle \texttt{hasFeature}, \texttt{Quantity}, \texttt{hasValue} \rangle\) \\
+        \texttt{hasBestLapTime} & \(\langle \texttt{hasFeature}, \texttt{Duration}, \texttt{hasValue} \rangle\) \\
+        \texttt{hasRaceDate}, \texttt{hasDateOfBirth} & \(\langle \texttt{atTime}, \texttt{TimeInstant}, \texttt{hasValue} \rangle\) \\
+        \texttt{hasYear} & \(\langle \texttt{atTime}, \texttt{TimeInterval}, \texttt{hasValue} \rangle\) \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{definition}[Enrichment units and ablation variants]
+\label{def:ablation}
+Let \(U = \{\text{typing},\allowbreak \texttt{precedesRace},\allowbreak \texttt{precedesSeason},\allowbreak \texttt{hasTeamMember},\allowbreak \text{rank reification}\}\). Each unit owns one component of a schema: SULO typing owns \(\sigma\), and every other unit owns the shape of its property. For schemas \(S\) and \(D\), \(S[u \leftarrow D]\) is \(S\) with the component of \(u\) taken from \(D\). If \(D\) does not cover the property, the property is removed. The ablation variants are
+\[
+S_H[u \leftarrow S_A] \;\; (\text{Hybrid} - u) \qquad \text{and} \qquad S_A[u \leftarrow S_H] \;\; (\text{Ad-hoc} + u), \qquad u \in U,
+\]
+which together with the controls \(S_H\) and \(S_A\) give 12 graphs.
+\end{definition}
+
+Replacing all five units in \(S_H\) gives \(S_A\) up to the name of the circuit predicate, and the reverse also holds. The units differ in size: SULO typing adds 43,099 triples, \texttt{hasTeamMember} 1,941, \texttt{precedesRace} 1,076, and \texttt{precedesSeason} 76. Rank reification replaces 34 triples with 102 and adds 34 intermediate nodes.
+
+%-------------------------------------------------------------------------
+\subsection{Distance to Evidence}
+\label{sec:method_distance}
+
+RQ3 relates the results to the number of hops between a prediction target and the facts it depends on.
+
+\begin{definition}[Hop distance]
+\label{def:hops}
+For a graph \(G\), \(d_G(u, v)\) is the length of the shortest path between nodes \(u\) and \(v\) when edge directions are ignored. The \(K\)-hop neighborhood of \(v\) is \(N_K(v) = \{u \in V(G) : d_G(u, v) \le K\}\).
+\end{definition}
+
+A message-passing network with \(K\) layers computes the output of node \(v\) from the input features of the nodes in \(N_K(v)\) only \cite{gilmer2017mpnn}. Every triple is used in both directions (Section~\ref{sec:method_features}), so edge direction does not limit this neighborhood.
+
+\begin{definition}[Evidence distance]
+\label{def:evidence}
+For a chain of properties \((p_1, \ldots, p_m)\) that starts at an entity, its length in schema \(S\) is
+\[
+h_S(p_1, \ldots, p_m) = \sum_{i=1}^{m} \ell_S(p_i), \qquad
+\ell_S(p) =
+\begin{cases}
+    1 & \text{if } \pi_S(p) \text{ is direct},\\
+    2 & \text{if } \pi_S(p) \text{ is a path}.
+\end{cases}
+\]
+\end{definition}
+
+The \texttt{rdf:type} edge of an intermediate node does not lie on the chain. Table~\ref{tab:evidence} lists the chains that lead from each query to the literals that identify its answer.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Evidence distance \(h_S\) in hops from the query head to the literals that identify the answer.}
+    \label{tab:evidence}
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{lllccc}
+        \toprule
+        Task & Evidence & Chain & Ad-hoc & Hybrid & Pure \\
+        \midrule
+        NC & own grid rank & \texttt{hasStartPosition}, \texttt{hasRank} & 2 & 3 & 3 \\
+        LP team & driver's literals & \texttt{hasDriver}, \texttt{hasDriverName} & 2 & 2 & 4 \\
+        LP position & a session's rank & \texttt{hasSessionResult}, \texttt{hasPosition}, \texttt{hasRank} & 3 & 4 & 4 \\
+        LP circuit & race's literals & \texttt{hasRaceName} & 1 & 1 & 2 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+%-------------------------------------------------------------------------
+\subsection{Prediction Tasks}
+\label{sec:method_tasks}
+
+\subsubsection{Node Classification}
+
+\begin{definition}[Node classification]
+\label{def:nc}
+Let \(\mathcal{E}_{\mathrm{RE}}\) be the 27,032 \texttt{RaceEntry} entities. The label is \(y(e) = 1\) if entry \(e\) scored championship points (points value \(> 0\)) and \(y(e) = 0\) otherwise. Let \(M = \{\texttt{hasRacePoints}, \texttt{hasFinishPosition}, \texttt{hasStatus}, \texttt{hasLapsCompleted}\}\) be the label and the race outcomes. The input graph of schema \(S\) is
+\[
+G^{\mathrm{NC}}_S = \mathrm{render}\big(\{(s, p, v) \in \mathcal{A} : p \notin M\},\, S\big).
+\]
+\end{definition}
+
+The label is positive for 31.3\% of the entries. The race outcomes are known only after the race, and the finishing position alone predicts the label with a ROC-AUC of 0.985. Facts known before the race, such as the grid position and the qualifying, sprint, and practice results, remain. The outcomes are removed for every entry, not only for test entries, because a test entry's finishing position could otherwise be derived from those of the other entries in its race. Removal happens before rendering, so a path shape disappears together with its intermediate node.
+
+The entries are split 80/10/10 into training, validation, and test sets, stratified by label (21,625 / 2,703 / 2,704 entries). The same split is used for every graph and both models. A temporal split was not used: the share of positive labels changes between eras, and sprint and practice data exist only in recent seasons, which would mix the effect of time with the effect of the graph.
+
+\subsubsection{Link Prediction}
+
+\begin{definition}[Link prediction query]
+\label{def:lp}
+A query \((h, r, ?)\) asks for the tail of target \(r\) for head \(h\). The three targets are
+\begin{center}
+\begin{tabular}{llll}
+    \toprule
+    Target \(r\) & Head class & Fact & Candidates \(C_r\) \\
+    \midrule
+    team & \texttt{RaceEntry} & \texttt{hasTeam} & 182 \texttt{Team} entities \\
+    position & \texttt{RaceEntry} & \texttt{hasStartPosition} & 34 \texttt{Position} entities \\
+    circuit & \texttt{Race} & \texttt{heldAtCircuit} (Hybrid: \texttt{isInCircuit}) & 78 \texttt{Circuit} entities \\
+    \bottomrule
+\end{tabular}
+\end{center}
+Every head has exactly one answer \(t^* \in C_r\), and the candidate set \(C_r\) contains every entity of the answer class.
+\end{definition}
+
+The targets are defined on the assertions, not on graph predicates. The same question is therefore asked in every graph, including Pure SULO, where team and driver share the same role path and start and finish position share \texttt{sulo:hasFeature}. Because every head has one answer, filtered and raw rankings are identical. Only nine relations between entities exist in all three graphs.
+
+The targets are chosen to test the constructions, not for their value as F1 predictions. The team of every entry and the circuit of every race are recorded in the data, and a single rule recovers most of them (Section~\ref{sec:method_training}). As in the knowledge graph completion benchmarks FB15k-237 and WN18RR \cite{toutanova2015observed,dettmers2018conve}, known facts are hidden and the model must recover them from the rest of the graph. A target therefore measures whether a construction keeps the evidence for a fact within the model's reach. Each target depends on a different part of the schema where the constructions differ (Table~\ref{tab:evidence}). The team target is a participation, which Pure SULO represents through a role node (the PRO pattern) and which \texttt{hasTeamMember} restates in Hybrid and Pure SULO. The position target links an entry to a shared \texttt{Position} hub whose rank is reified in Hybrid and Pure SULO. The circuit target is the only race-level link, and the race's literals are one hop away in Ad-hoc and Hybrid and two in Pure SULO. Of the three, only the position target corresponds to a common F1 question, the starting grid. Because race outcomes remain visible, however, the task completes a missing grid record rather than forecasting the grid before the race.
+
+The link prediction graph keeps every assertion except \texttt{hasFinishPosition}, which is removed for every entry because in Pure SULO it can be the same triple as the start position (Section~\ref{sec:method_graphs}). Points, status, and completed laps remain.
+
+\begin{definition}[Hidden facts]
+\label{def:hidden}
+Each target fact \(f\) belongs to a race \(\rho(f)\): the race of its entry, or the race itself. For a set of races \(H\), \(\mathrm{hide}_S(H)\) contains the triples that
+\begin{enumerate}
+    \item lie on the rendered path of a target fact \(f\) with \(\rho(f) \in H\), or
+    \item state a \texttt{hasTeamMember} pair \((t, d)\) for which every race entry of driver \(d\) for team \(t\) belongs to a race in \(H\).
+\end{enumerate}
+The model sees the visible graph \(G_S \setminus \mathrm{hide}_S(H)\).
+\end{definition}
+
+For the team target in Pure SULO, condition~1 removes all three triples of the role path. Condition~2 prevents a hidden team from being recovered through the driver's team membership. A check on every graph confirms that no hidden fact can be reached directly, through a role node, or through membership.
+
+The races are split 80/10/10 (922 / 115 / 116 races), and the split is shared by every graph and both models. All facts of a race fall into the same set, because the grid slots of a race are a permutation and teammates would reveal the team. This gives 21,658 / 2,639 / 2,735 team queries, 20,321 / 2,504 / 2,575 position queries, and 922 / 115 / 116 circuit queries. The hidden races \(H\) depend on the stage:
+\begin{itemize}
+    \item \textbf{Training}: in each epoch, \(H = R_{\mathrm{val}} \cup R_{\mathrm{test}} \cup B\), where \(B\) is a random 30\% of the training races, and the loss uses the queries of \(B\). Supervised facts are hidden from message passing, so the model cannot copy a visible edge. The ratio of 30\% is the value used in PyTorch Geometric's link prediction tutorial \cite{fey2019fastgraphrepresentationlearning}.
+    \item \textbf{Validation}: \(H = R_{\mathrm{val}} \cup R_{\mathrm{test}}\), scored on the queries of \(R_{\mathrm{val}}\).
+    \item \textbf{Test}: after retraining on \(R_{\mathrm{train}} \cup R_{\mathrm{val}}\), \(H = R_{\mathrm{test}}\), scored on the queries of \(R_{\mathrm{test}}\).
+\end{itemize}
+
+Table~\ref{tab:graph_sizes} gives the size of each graph after task preparation.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Graph sizes after task preparation. \(|\mathcal{Q}|\) counts predicates including \texttt{rdf:type}; \(R = 2|\mathcal{Q}|\) relation types after adding inverses.}
+    \label{tab:graph_sizes}
+    \begin{tabular}{llrrrr}
+        \toprule
+        Task & Graph & Nodes & Triples & \(|\mathcal{Q}|\) & \(R\) \\
+        \midrule
+        NC & Ad-hoc & 57,946 & 216,321 & 26 & 52 \\
+           & Hybrid & 57,985 & 262,581 & 29 & 58 \\
+           & Pure SULO & 148,910 & 444,421 & 12 & 24 \\
+        \midrule
+        LP & Ad-hoc & 58,154 & 297,417 & 29 & 58 \\
+           & Hybrid & 58,193 & 343,677 & 32 & 64 \\
+           & Pure SULO & 230,214 & 687,709 & 12 & 24 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+%-------------------------------------------------------------------------
+\subsection{Graph Tensors and Node Features}
+\label{sec:method_features}
+
+Each triple \((s, q, o)\) becomes two directed edges: \(s \to o\) with relation type \(q\), and \(o \to s\) with the inverse type \(q^{-1}\). This follows R-GCN, which uses every relation in both directions \cite{rgcn_cite}. The \texttt{rdf:type} triples are kept, because typing is part of each construction.
+
+Node features never use IRI text. Each node \(v\) has a key \(k(v)\) and a scalar \(z_v\):
+\begin{itemize}
+    \item an instance: \(k(v)\) is its set of \texttt{rdf:type} classes, \(z_v = 0\);
+    \item a class: \(k(v)\) is the class, \(z_v = 0\);
+    \item a numeric or date literal: \(k(v)\) is its datatype, and \(z_v\) is its value standardized over all literal nodes of that datatype (dates as fractional years);
+    \item a boolean literal: \(k(v)\) is its datatype, \(z_v \in \{0, 1\}\);
+    \item a string literal: \(k(v)\) is the string itself, \(z_v = 0\).
+\end{itemize}
+The input vector is
+\[
+x_v = \big[\, a_{k(v)} + z_v\, b_{k(v)} \;;\; \delta_v \,\big] \in \mathbb{R}^{257},
+\]
+where \(a_k, b_k \in \mathbb{R}^{256}\) are learned embeddings of key \(k\) and \(\delta_v\) is the standardized \(\log(1 + \deg(v))\) on the graph the model sees.
+
+Two entities with the same set of types therefore start with the same features and differ only through their neighbors. SULO typing changes the key of every instance. Every distinct literal is one node shared by all subjects with that value, as in the RDF graphs themselves.
+
+%-------------------------------------------------------------------------
+\subsection{Models}
+\label{sec:method_models}
+
+Both encoders have \(K\) message-passing layers of width \(d\), with ReLU and dropout between layers and \(h^{(0)}_v = x_v\). The dropout rates are those of the PyTorch Geometric reference examples: 0.2 for R-GCN and 0.5 for GraphSAGE.
+
+\paragraph{R-GCN.} Each layer computes \cite{rgcn_cite}
+\[
+h^{(l+1)}_v = W^{(l)}_0 h^{(l)}_v + \sum_{r=1}^{R} \frac{1}{|N_r(v)|} \sum_{u \in N_r(v)} W^{(l)}_r h^{(l)}_u + b^{(l)},
+\qquad
+W^{(l)}_r = \sum_{j=1}^{B} c^{(l)}_{rj} V^{(l)}_j,
+\]
+where \(N_r(v)\) are the neighbors of \(v\) under relation type \(r\). With basis decomposition, every relation matrix is a combination of \(B\) shared bases. Without it, every relation has its own matrix.
+
+\paragraph{GraphSAGE.} Each layer uses the mean aggregator \cite{graphsage_cite}:
+\[
+h^{(l+1)}_v = W^{(l)}_1 h^{(l)}_v + W^{(l)}_2 \frac{1}{|N(v)|} \sum_{u \in N(v)} h^{(l)}_u + b^{(l)},
+\]
+where \(N(v)\) contains all neighbors regardless of relation type. Applying one linear map to the concatenation of \(h_v\) and the neighbor mean, as in the original formulation, is the same as this sum. The neighbors are averaged directly, without a learned layer before the mean. The aggregator is fixed in advance and not tuned.
+
+\paragraph{Node classification head.} The last layer has one output, the logit \(s_e\) of entry \(e\). The loss is the binary cross-entropy between \(\sigma(s_e)\) and \(y(e)\), averaged over the training entries.
+
+\paragraph{Link prediction head.} The last layer outputs an embedding \(e_v \in \mathbb{R}^{d}\). A DistMult decoder scores a candidate as
+\[
+\phi(h, r, t) = \sum_{i=1}^{d} e_{h,i}\, w_{r,i}\, e_{t,i},
+\]
+with one learned vector \(w_r\) per target, as in the R-GCN link prediction model \cite{yang2015embeddingentitiesrelationslearning,rgcn_cite}. The loss is the cross-entropy over all candidates of a query \cite{dettmers2018conve,ruffinelli2020olddog}:
+\[
+\mathcal{L} = -\frac{1}{|Q_B|} \sum_{(h, r, t^*) \in Q_B} \log \frac{\exp \phi(h, r, t^*)}{\sum_{t \in C_r} \exp \phi(h, r, t)},
+\]
+where \(Q_B\) are the queries of the supervised races \(B\). Every query has the same weight. One model per graph and encoder is trained for all three targets together.
+
+%-------------------------------------------------------------------------
+\subsection{Training, Tuning, and Evaluation}
+\label{sec:method_training}
+
+\paragraph{Training.} Training is full-batch: each epoch is one forward pass over the whole graph and one Adam step \cite{kingma2015adam}. Neighbor sampling was not used: with sampling, a \texttt{Position} node rarely drew its single rank edge among roughly 1,800 neighbors, so the model could not read the grid position. Training runs for at most 400 epochs, the largest value in GraphGym's design space \cite{you2020graphgym}. Early stopping uses the validation ROC-AUC (NC) or the validation MRR pooled over all targets (LP), with a patience of 50 epochs, and the best weights are restored. The first 50 epochs are trained but cannot be selected, because unstable validation scores in the first epochs were otherwise kept as the best. A run whose best epoch is 350 or later is recorded as ended by the epoch cap.
+
+\paragraph{Metrics.} For NC, the main metric is ROC-AUC; accuracy and F1 use a fixed threshold of 0.5. For LP, the rank of the answer is
+\[
+\mathrm{rank}(h, r) = 1 + \big|\{t \in C_r : \phi(h, r, t) > \phi(h, r, t^*)\}\big| + \tfrac{1}{2}\big|\{t \in C_r \setminus \{t^*\} : \phi(h, r, t) = \phi(h, r, t^*)\}\big|,
+\]
+so tied scores give no advantage. MRR is the mean of \(1/\mathrm{rank}\), and Hits@\(k\) the share of queries with \(\mathrm{rank} \le k\), for \(k \in \{1, 3, 10\}\). Both are reported per target and pooled over all queries.
+
+\paragraph{Hyperparameter search.} Each combination of graph, encoder, and task is tuned separately with the same search, giving 12 searches. Table~\ref{tab:search_space} gives the search space. The search has four phases:
+\begin{enumerate}
+    \item a joint grid over width and depth, at the default learning rate, weight decay, and number of bases;
+    \item at the phase-1 winner, the number of bases (R-GCN only), then the learning rate, then the weight decay, each with the earlier choices fixed;
+    \item a \(2 \times 2\) verification grid of the two best widths at the winning depth and the two best combinations of bases, learning rate, and weight decay from phase~2;
+    \item the winner is retrained on the training and validation data for its median best epoch plus one, without early stopping, and evaluated once on the test set per final seed.
+\end{enumerate}
+In phases 1--3, every configuration is trained with seeds \(\{0, 1, 2\}\) and scored by its mean validation metric. Phase~4 uses seeds \(\{0, \ldots, 4\}\), and results are reported as mean \(\pm\) standard deviation over these seeds. No significance test is applied.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Search space. Values are based on the R-GCN, GraphSAGE, GCN, and GraphGym papers \cite{rgcn_cite,graphsage_cite,kipf2017gcn,you2020graphgym}, except the default weight decay and the patience, which have no literature value.}
+    \label{tab:search_space}
+    \small
+    \begin{tabular}{lll}
+        \toprule
+        Hyperparameter & Values & Default \\
+        \midrule
+        Width \(d\) & \(\{32, 64, 128, 256, 512\}\); LP up to 256 & -- \\
+        Depth \(K\) & \(\{1, 2, 3\}\) & -- \\
+        Bases \(B\) (R-GCN) & \(\{\text{none}, 2, 10, 20, 30, 40\}\), at most \(R\) & 10 \\
+        Learning rate & \(\{10^{-4}, 5 \cdot 10^{-4}, 10^{-3}, 5 \cdot 10^{-3}, 10^{-2}\}\) & \(10^{-2}\) \\
+        Weight decay & \(\{0, 10^{-5}, 10^{-4}, 5 \cdot 10^{-4}, 10^{-3}\}\) & \(10^{-4}\) \\
+        Input embedding size & 256 (fixed) & -- \\
+        Epochs / patience / warm-up & 400 / 50 / 50 (fixed) & -- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+For Pure SULO (\(R = 24\)), the bases are limited to \(\{\text{none}, 2, 10, 20\}\). The LP widths stop at 256 because a 512-wide R-GCN does not fit in memory on the Pure SULO link prediction graph. Both encoders use the same LP grid.
+
+\paragraph{Checks.} Each model is also trained once on shuffled labels (NC) or shuffled answers (LP), which must give a chance-level test score. For LP, two baselines give reference points. The frequency baseline ranks candidates by how often they answer the target in the races before the evaluated split, which is the best score possible when the graph gives no information about a query. One-rule baselines predict the driver's most frequent team in the same season, the most frequent circuit of the race name, and the qualifying position (otherwise the driver's most frequent grid slot in that season).
+
+\paragraph{Implementation.} The pipeline is implemented in Python with PyTorch Geometric \cite{fey2019fastgraphrepresentationlearning} and runs on one 12 GB GPU. R-GCN layers use gradient checkpointing so that full-batch training fits in memory. This changes memory use but not the outputs.

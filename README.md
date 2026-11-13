@@ -1,68 +1,111 @@
-# Knowledge Graph Satisfaction Prediction
+# Ontologies vs. GNNs: upper-level ontology alignment and graph learning on Formula 1 data
 
-Research pipeline comparing knowledge-graph-based and non-graph approaches on two tasks over a
-customer-case knowledge graph: **node classification** (predicting customer-case satisfaction, a
-binary survey rating) and **link prediction** (predicting an entity relation, Vehicle/Account/Task, given a case). Both tasks are evaluated across two knowledge graph constructions, a formalized Upper Level Ontology (ULO) based
-ontology (**SULO**) and an ad-hoc schema. They were tested over three learning model: R-GCN, GraphSAGE, and TransE,
-alongside a non-graph tabular baseline (XGBoost) for the node-classification task.
+Thesis code. The same Formula 1 records are built into **three knowledge graphs** that differ in how far
+they follow the Simplified Upper-Level Ontology ([SULO](https://w3id.org/sulo/)). Each graph is then
+evaluated with two GNN encoders, **R-GCN** and **GraphSAGE** (mean aggregator), on **node classification**
+and **link prediction**. Every graph gets the same records, splits, seeds, tuning budget and evaluation
+code, so score differences can be attributed to the graph construction.
+
+Data: the public Kaggle dataset
+[Formula 1 World Championship (1950–present)](https://www.kaggle.com/datasets/atharvranjan/formula-1-world-championship-1950-present),
+pinned to version 9 and downloaded with `kagglehub`. No credentials are needed.
+
+## The three knowledge graphs
+
+| Graph | Schema | Construction |
+|---|---|---|
+| **Ad-hoc** | `turtles/f1/base_kg.ttl` | Hand-made F1 domain schema: domain-specific properties, attributes as direct literals. No SULO. |
+| **Hybrid** | `turtles/f1/hybrid_sulo_kg.ttl` | Ad-hoc's domain properties, every class aligned under a SULO class, plus the SULO relations that the alignment makes available: `precedesRace` / `precedesSeason` (`sulo:precedes`), `hasTeamMember` (`sulo:hasItem`), and the grid rank on an information object (`sulo:isReferredToIn` → `sulo:hasValue`). `heldAtCircuit` is renamed `isInCircuit` (`sulo:isIn`). |
+| **Pure SULO** | `turtles/f1/pure_sulo_kg.ttl` | The same classes, alignments and enrichments as Hybrid, but every property is written with SULO predicates only. Participation goes through a `sulo:Role` node (PRO pattern), and literals go through an intermediate information object, quantity or time node (SOLID pattern). |
+
+Domain classes: `Season`, `Race`, `Circuit`, `RaceEntry`, `SessionResult`, `Driver`, `Team`, `Position`.
+`turtles/sulo.ttl` is the vendored upstream SULO ontology. The three `.ttl` schemas were generated with the
+SULO-Compliant Schema Builder.
+
+The tables are turned once into graph-independent **assertions** (`f1_population.build_assertions`). Each
+schema then decides how an assertion is written as triples (`read_schema` parses the `rdfs:domain` class
+expressions, `render_ntriples` writes them). No triple shape is written by hand, so the graphs hold the same
+base facts by construction. Hybrid and Pure SULO hold the same facts and differ only in structure.
+
+## Tasks
+
+- **Node classification**: did a `RaceEntry` score championship points (points > 0, 31.3% positive)?
+  The label and the race outcomes (finish position, status, laps completed) are removed for every entry.
+  Stratified 80/10/10 split over the 27,032 entries. Headline metric: ROC-AUC.
+- **Link prediction**: three tail queries, each ranked against every entity of the answer class:
+  - Team of a `RaceEntry` (182 candidates)
+  - start (grid) Position of a `RaceEntry` (34 candidates)
+  - Circuit of a `Race` (78 candidates)
+
+  Holdout is per race (80/10/10 of 1,153 races). A held-out fact is hidden along its whole rendered path,
+  and `leaked_facts` checks that nothing hidden is reachable. Metrics: MRR and Hits@1/3/10, per target and
+  pooled.
+
+## Experiments → code
+
+| Experiment | Question | Notebooks | Results in `outputs/f1/` |
+|---|---|---|---|
+| E1: main comparison (each graph tuned) | Ad-hoc vs. Hybrid vs. Pure SULO | `node_prediction/RGCN.ipynb`, `graph_sage.ipynb`; `link_prediction/link_prediction_{rgcn,graphsage}.ipynb` | `node_prediction/{rgcn,graphsage}/`, `link_prediction/{rgcn,graphsage}/` |
+| E2: enrichment ablation (one unit at a time, both directions) | Effect of each SULO enrichment | `node_prediction/{RGCN,graph_sage}_ablation.ipynb`; `link_prediction/link_prediction_{rgcn,graphsage}_ablation.ipynb` | `*/ablation/{rgcn,graphsage}/` |
+| E3: depth | Is the effect explained by the hop distance to the evidence? | `node_prediction/{RGCN,graph_sage}_k_sweep.ipynb`, `RGCN_ablation_k2.ipynb`; `link_prediction/link_prediction_{rgcn,graphsage}_depth.ipynb`, `link_prediction_analysis.ipynb` | `node_prediction/k_sweep/`, `node_prediction/ablation_k2/`, `link_prediction/depth/`, `link_prediction/analysis/` |
+
+Each notebook states the literature source of every hyperparameter in its constants cell. Predictions
+for the follow-up checks are written in the notebook's introduction, before its results.
 
 ## Repository layout
 
 ```
-Graph_population.ipynb       Populates the KG (RDF triples) from raw source tables -> .nt/.ttl files
-embeddings.ipynb             Generates BERT text embeddings (case/task descriptions) -> Delta tables
-extract_graph_geometry.ipynb Structural comparison of the SULO vs. Ad-hoc KGs (Table 1)
-ontology_visualization.ipynb Renders the SULO/Ad-hoc class-and-property diagrams
-analysis.ipynb               Aggregates results from every pipeline stage into the final comparison tables
-training_data.py             Ontology/TrainingData: parses .nt into PyG tensors + the 80/10/10 split
+f1_population.py             Kaggle tables -> assertions -> triples per schema (scope, IRIs, schema parsing, rendering)
+f1_graph_population.ipynb    Runs the population; writes data/f1/ (see below)
+f1_node_data.py              Shared graph tensors: masking, splits, node features, ablation schemas (build_kg_data)
+ontology_visualization.ipynb Schema diagrams of the three .ttl files
+results_figures.py           Figures for the Results chapter, read from outputs/f1/ (no training)
 
-node_prediction/     Node-classification pipeline: TransE, R-GCN, GraphSAGE, and the
-                     XGBoost tabular baseline, plus their shared gnn_tools.py infrastructure.
-                     See node_prediction/README.md.
-link_prediction/     Link-prediction pipeline: R-GCN/GraphSAGE/TransE-based prediction of the
-                     Vehicle/Account/Task relations, plus their shared link_prediction_tools.py
-                     infrastructure. See link_prediction/README.md.
-
-turtles/             sulo.ttl (vendored upstream SULO ontology) plus this project's own schema
-                     extension (base_kg.ttl, sulo_kg.ttl). If you wish to build a new knowledge graph, you will need to create your own ttl, and modify Graph_population.ipynb to fit your data
+node_prediction/             Node classification: models, training/tuning code, notebooks (see its README)
+link_prediction/             Link prediction: data, model, training/tuning code, notebooks (see its README)
+turtles/f1/                  The three F1 schemas;  turtles/sulo.ttl: upstream SULO
+tests/                       pytest suite (population, graph data, models, search, link prediction)
+outputs/f1/                  Result CSVs and figures (model checkpoints *.pt are not versioned)
 ```
 
-## Running the pipeline
+`data/f1/` is generated and not versioned. It holds `assertions.csv` and `entities.csv`, the complete graphs
+`{adhoc,pure_sulo,hybrid_sulo}.nt`, and `sample/<kg>.ttl` (the 20 most recent races, for reading). Reload the
+CSVs with `dtype=str, keep_default_na=False`, otherwise lexical forms change (`true` → bool, `78.050` → `78.05`).
 
-Run in this order. Most notebooks process **one schema (`base` or `sulo`) per kernel session (or restart python)**,
-set `SCHEMA_LABEL`/`schema_label` at the top and re-run for the second schema in a fresh session.
+## Setup and running
 
-1. **`Graph_population.ipynb`**, builds RDF triples for both KG schemas from the raw source
-   tables (Case/Account/Vehicle/Task/CaseHistory/Survey), scoped to *all* cases with a survey
-   response, not just the balanced training subset.
-   **Outputs:** `.nt` instance files per schema (e.g.
-   `subset_balanced_baseline_populated_graph.nt`, `subgraph_balanced_sulo_populated_graph.nt`),
-   plus a full/unbalanced variant of each; materializes `ds_ccc.kg_sulo_balanced_case_ids` (the
-   stratified 50k-case sample every downstream training notebook subsets to).
+```bash
+conda env create -f environment.yml      # env "sulo": Python 3.11, torch 2.7 + CUDA 12.6, PyG; Graphviz for the diagrams
+conda activate sulo
+pytest                                    # ~260 tests, about 30 s
+```
 
-2. **`embeddings.ipynb`**, generates BERT embeddings for case descriptions, case solutions, and
-   task descriptions, over the same full case scope as step 1.
-   **Outputs:** `ds_ccc.sulokg_embeddings_dv` (case description/solution vectors),
-   `ds_ccc.sulokg_task_embeddings_dv` (task description vectors).
+1. `f1_graph_population.ipynb`: downloads the data and writes `data/f1/`.
+2. `node_prediction/`: main runs first (the ablation and K-sweep read the tuning CSVs). See `node_prediction/README.md`.
+3. `link_prediction/`: setup checks, then main runs, ablation, depth and analysis. See `link_prediction/README.md`.
+4. `python results_figures.py`: writes the figures to `outputs/f1/figures/`.
 
-3. **`node_prediction/`**, the node-classification pipeline: TransE (also reused as an
-   embedding source by `link_prediction/`), R-GCN, GraphSAGE, the standalone K-sweep notebook, and
-   the XGBoost tabular baseline. See `node_prediction/README.md` for run order and per-notebook
-   outputs.
+Notebooks can be run from the repo root or from their own folder. The runs were done on one RTX 3060 (12 GB);
+the largest configuration peaks at about 9.6 GiB. Every notebook first calls
+`gnn_tools.limit_cuda_memory_to_free_vram()`, so an over-large configuration raises an out-of-memory error
+that is logged and skipped. (Under WSL2 it would otherwise spill into system RAM.)
 
-4. **`extract_graph_geometry.ipynb`**, measures structural differences between the SULO and
-   Ad-hoc KGs (node/edge counts, degree distribution, feature-to-Case proximity).
-   **Outputs:** `rq1a_structural_comparison.csv` (Table 1), `{schema}_raw_edges.pt` (uncapped
-   graph, cached separately from `node_prediction/`'s degree-capped training graph).
+**Reproducibility.** The splits use `random_state=42`. Tuning uses seeds 0–2, and final results are the
+mean ± std over seeds 0–4. CPU runs are bit-reproducible. On the GPU, PyG's scatter operations are not
+deterministic, so repeated runs differ slightly. This noise is measured and reported as a limitation.
+Long sweeps write their CSVs incrementally and resume after a crash.
 
-5. **`link_prediction/`**, the link-prediction pipeline: builds a shared induced-subgraph data
-   bundle, then runs link prediction on top of trained R-GCN, GraphSAGE, and TransE models. See
-   `link_prediction/README.md` for run order and per-notebook outputs.
+## Legacy files
 
-6. **`analysis.ipynb`**, reads only the CSV/artifact outputs of the steps above; produces the
-   final aggregated comparison tables and figures. Nothing else depends on its output.
+These files come from an earlier phase of the project, on a different, non-public dataset. They are not
+used by the F1 pipeline and are out of scope for the thesis:
 
-## Results
+- `Graph_population.ipynb`, `embeddings.ipynb`, `analysis.ipynb`, `extract_graph_geometry.ipynb`
+- `training_data.py`
+- `turtles/cac/`
+- `node_prediction/transE.ipynb`, `node_prediction/automl_tabular_baseline.ipynb`
+- `link_prediction/link_prediction_transe.ipynb`
+- the concept-masking helpers in `node_prediction/gnn_tools.py` (`get_graph_mask`, `mask_graph_topology`,
+  `compute_entity_reuse_stats`)
 
-Final comparison tables/figures are produced by `analysis.ipynb` from each pipeline stage's own
-output CSVs, not hardcoded here, see that notebook for current numbers.
+TransE and the tabular baseline are not part of the evaluation.
