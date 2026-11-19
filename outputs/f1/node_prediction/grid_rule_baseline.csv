@@ -1,0 +1,4 @@
+split,grid_rule_roc_auc
+train,0.8176
+val,0.8145
+test,0.8352

@@ -1,14 +1,17 @@
 import random
 import re
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 import torch
+from sklearn.metrics import roc_auc_score
+from torch_geometric.data import Data
 
 from f1_node_data import (
     ABLATION_UNITS, ABLATION_VARIANTS, LABEL_PROPERTY, OUTCOME_PROPERTIES, _triples, ablation_schema,
-    build_graph, build_kg_data, degree_feature, literal_number, masked_lines, node_features,
-    race_entry_labels, stratified_split, swap_units,
+    build_graph, build_kg_data, degree_feature, grid_rule_scores, hub_degree_rule_scores, literal_number, masked_lines,
+    node_features, race_entry_labels, stratified_split, swap_units, train_point_rate, within_slot_spearman,
 )
 from f1_population import NS, RDF_TYPE, SULO_NS, XSD_NS, render_ntriples
 
@@ -58,6 +61,83 @@ def test_labels_come_from_the_assertions(built):
     labels = race_entry_labels(built[1])
     assert labels.to_dict() == {NS + "RaceEntry/100": 1, NS + "RaceEntry/101": 1,
                                 NS + "RaceEntry/102": 0, NS + "RaceEntry/103": 1}   # 104: points missing
+
+
+# ── Grid-only baseline ────────────────────────────────────────────────────
+
+def test_grid_rule_reads_only_the_start_position(built):
+    entries = [NS + f"RaceEntry/{i}" for i in (100, 101, 102, 103, 104)]
+    scores = grid_rule_scores(built[1], entries)
+    # 104 finished P2 from grid 3: the finish position must not be used.
+    assert scores[[NS + "RaceEntry/100", NS + "RaceEntry/101", NS + "RaceEntry/103", NS + "RaceEntry/104"]].tolist() \
+        == [-1, -1, -2, -3]
+    # 102 started from the pit lane (grid 0, omitted) but has a qualifying position: still no grid.
+    assert scores[NS + "RaceEntry/102"] < scores.drop(NS + "RaceEntry/102").min()
+
+
+def _grid_assertions(grid):
+    """Entry e<i> starts from Position/<grid[i]> (None = no start position)."""
+    rows = [(f"e{i}", "RaceEntry", "hasStartPosition", f"P{g}") for i, g in enumerate(grid) if g is not None]
+    rows += [(f"P{g}", "Position", "hasRank", str(g)) for g in sorted({g for g in grid if g is not None})]
+    return pd.DataFrame(rows, columns=["subject", "subject_class", "property", "value"])
+
+
+def test_grid_rule_auc_limits():
+    grid = [1, 2, 3, 4, None]
+    scores = grid_rule_scores(_grid_assertions(grid), [f"e{i}" for i in range(5)])
+    assert roc_auc_score([1, 1, 0, 0, 0], scores) == 1.0    # front of the grid scores, the rest does not
+    assert roc_auc_score([0, 0, 1, 1, 1], scores) == 0.0    # exact reverse
+    assert roc_auc_score([0, 1, 0, 1, 0], scores) == 0.5    # 3 of 6 pairs ordered correctly
+
+
+def test_grid_rule_ranks_a_missing_grid_last_and_ties_equal_ranks():
+    scores = grid_rule_scores(_grid_assertions([20, None, 20]), ["e0", "e1", "e2"])
+    assert scores["e0"] == scores["e2"] == -20
+    assert scores["e1"] < -20
+
+
+# ── Hub-degree baseline ───────────────────────────────────────────────────
+
+ENTRIES = [NS + f"RaceEntry/{i}" for i in (100, 101, 102, 103, 104)]
+
+
+@pytest.mark.parametrize("kg", KGS)
+def test_hub_degree_rule_counts_the_start_hubs_triples_in_the_masked_graph(built, masked, kg_data, kg):
+    scores = hub_degree_rule_scores(kg_data[kg], built[1], ENTRIES)
+    start = built[1].query("property == 'hasStartPosition'").set_index("subject")["value"]
+    for entry, hub in start.items():
+        # Edges are doubled, so a node's in-degree is the number of triples it is subject or object of.
+        expected = sum(f"<{hub}>" in (s, o) for s, _, o in _triples(masked[kg]))
+        assert scores[entry] == expected > 0, (entry, hub)
+    assert scores[NS + "RaceEntry/102"] == -1                       # pit-lane start: no hub, ranked last
+
+
+def test_hub_degree_rule_orders_entries_identically_in_every_kg(built, kg_data):
+    # Same start/session facts in all three KGs; typing and the rank shape add the same count to every hub.
+    has_hub = [e for e in ENTRIES if e != NS + "RaceEntry/102"]
+    scores = {kg: hub_degree_rule_scores(kg_data[kg], built[1], has_hub) for kg in KGS}
+    for kg in KGS:
+        assert (scores[kg] - scores["adhoc"]).nunique() == 1, kg
+
+
+def _hub_data(hub_degrees):
+    """Entry e<i> starts from hub P<i>, which has hub_degrees[i] in-edges (None = no start position)."""
+    node_ids = {f"<P{i}>": i for i in range(len(hub_degrees))}
+    targets = [i for i, d in enumerate(hub_degrees) for _ in range(d or 0)]
+    data = Data(edge_index=torch.tensor([[0] * len(targets), targets]), num_nodes=len(hub_degrees))
+    rows = [(f"e{i}", "RaceEntry", "hasStartPosition", f"P{i}") for i, d in enumerate(hub_degrees) if d is not None]
+    assertions = pd.DataFrame(rows, columns=["subject", "subject_class", "property", "value"])
+    return SimpleNamespace(data=data, node_ids=node_ids), assertions
+
+
+def test_hub_degree_rule_auc_limits():
+    entries = [f"e{i}" for i in range(4)]
+    scores = hub_degree_rule_scores(*_hub_data([9, 7, 3, None]), entries)
+    assert scores.tolist() == [9, 7, 3, -1]
+    assert roc_auc_score([1, 1, 0, 0], scores) == 1.0                # busiest hubs score, the rest does not
+    assert roc_auc_score([0, 0, 1, 1], scores) == 0.0
+    flat = hub_degree_rule_scores(*_hub_data([5, 5, 5, 5]), entries)
+    assert roc_auc_score([1, 0, 1, 0], flat) == 0.5                  # equal degrees carry no information
 
 
 @pytest.fixture
@@ -285,3 +365,42 @@ def test_every_variant_keeps_the_mask_and_the_labelled_split(built, schemas, kg_
     ref = kg_data["adhoc"]
     for part in ("train", "val", "test"):
         assert torch.equal(d.data.y[getattr(d, part)], ref.data.y[getattr(ref, part)])
+
+
+# ── Driver/team strength (post-hoc analysis helpers) ──────────────────────
+
+def _driver_assertions(drivers):
+    return pd.DataFrame([(e, "RaceEntry", "hasDriver", d) for e, d in drivers.items()],
+                        columns=["subject", "subject_class", "property", "value"])
+
+
+def test_train_point_rate_leaves_the_entry_itself_out():
+    drivers = {"a1": "A", "a2": "A", "a3": "A", "b1": "B", "t1": "A", "t2": "C"}
+    labels = pd.Series({"a1": 1, "a2": 1, "a3": 0, "b1": 1, "t1": 0, "t2": 1})
+    rate = train_point_rate(_driver_assertions(drivers), labels, ["a1", "a2", "a3", "b1"], "hasDriver")
+    assert rate["a1"] == rate["a2"] == 0.5          # the other two of A's training entries: 1 and 0
+    assert rate["a3"] == 1.0                        # its own 0 is not counted
+    assert rate["t1"] == pytest.approx(2 / 3)       # a test entry sees all of A's training entries
+    assert pd.isna(rate["b1"]) and pd.isna(rate["t2"])   # no other training entry with that driver
+
+
+def test_within_slot_spearman_limits_and_weights():
+    slot = [1, 1, 1, 2, 2, 2]
+    assert within_slot_spearman([1, 2, 3, 1, 2, 3], [10, 20, 30, 5, 6, 7], slot) == pytest.approx(1.0)
+    assert within_slot_spearman([1, 2, 3, 1, 2, 3], [30, 20, 10, 7, 6, 5], slot) == pytest.approx(-1.0)
+    # Slot 1 (3 entries) +1, slot 2 (6 entries) -1: weighted mean (3 - 6) / 9.
+    six = [2] * 6
+    assert within_slot_spearman([1, 2, 3] + list(range(6)), [1, 2, 3] + list(range(6, 0, -1)), [1, 1, 1] + six) \
+        == pytest.approx(-1 / 3)
+
+
+def test_within_slot_spearman_ignores_differences_between_slots():
+    # Pooled, scores and x rise together across slots; inside each slot they are exactly reversed.
+    scores, x, slot = [1, 2, 3, 11, 12, 13], [3, 2, 1, 13, 12, 11], [1, 1, 1, 2, 2, 2]
+    assert within_slot_spearman(scores, x, slot) == pytest.approx(-1.0)
+
+
+def test_within_slot_spearman_skips_undefined_slots():
+    # Slot 2 is constant in x and slot 3 has two entries: only slot 1 counts.
+    scores, x = [1, 2, 3, 1, 2, 3, 1, 2], [1, 2, 3, 5, 5, 5, 2, 1]
+    assert within_slot_spearman(scores, x, [1, 1, 1, 2, 2, 2, 3, 3]) == pytest.approx(1.0)

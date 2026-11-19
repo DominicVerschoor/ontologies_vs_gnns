@@ -73,16 +73,21 @@ def seed_dots(ax, x, values, kg, width=0.22):
             solid_capstyle='round')
 
 
-def frequency_line(ax, value, label=True):
+def frequency_line(ax, value, label=True, text='frequency'):
     ax.axhline(value, color=INK2, linestyle=(0, (3, 2)), linewidth=1)
     if label:
-        ax.annotate('frequency', xy=(1, value), xycoords=('axes fraction', 'data'), xytext=(2, 0),
+        ax.annotate(text, xy=(1, value), xycoords=('axes fraction', 'data'), xytext=(2, 0),
                     textcoords='offset points', va='center', fontsize=7, color=INK2)
 
 
 def frequency_mrr():
     b = pd.read_csv(LP / 'baselines.csv', index_col=0)
     return b['frequency MRR'].to_dict()
+
+
+def grid_rule_auc():
+    """Test ROC-AUC of ranking entries by start grid alone (written by RGCN.ipynb / graph_sage.ipynb)."""
+    return pd.read_csv(NP / 'grid_rule_baseline.csv', index_col='split').loc['test', 'grid_rule_roc_auc']
 
 
 # --------------------------------------------------------------------------- E1
@@ -93,6 +98,7 @@ def e1_nc():
             seed_dots(ax, i + (j - 1) * 0.28, final_seeds('node_prediction', enc, kg)['test_roc_auc'], kg)
     ax.set_xticks(range(len(ENCODERS)), [ENC_NAME[e] for e in ENCODERS])
     ax.set_xlim(-0.6, 1.6)
+    frequency_line(ax, grid_rule_auc(), text='grid only')
     ax.set_ylabel('Test ROC-AUC')
     ax.grid(axis='x', visible=False)
     kg_legend(fig)
@@ -174,7 +180,8 @@ def e2_lp():
 
 DIRECT_RANK = ['adhoc', 'hybrid_minus_rank_reification'] + [f'adhoc_plus_{u}' for u in UNITS[:-1]]
 REIFIED_RANK = ['hybrid_sulo', 'adhoc_plus_rank_reification'] + [f'hybrid_minus_{u}' for u in UNITS[:-1]]
-RANK_COLOR = {'direct': KG_COLOR['adhoc'], 'reified': KG_COLOR['hybrid_sulo']}
+# Own hues (palette slots 7 and 4), so a rank form is never read as a KG (Ad-hoc blue / Hybrid orange).
+RANK_COLOR = {'direct': '#6250d6', 'reified': '#eda100'}
 RANK_MARKER = {'direct': 'o', 'reified': 's'}
 
 
@@ -229,46 +236,49 @@ def warm_up(ax):
 
 
 def lp_curves():
+    """R-GCN validation MRR per epoch, one line per seed; each panel has its own legend below it."""
     abl = LP / 'ablation' / 'rgcn' / 'checkpoints'
     dep = LP / 'depth' / 'rgcn' / 'checkpoints'
-    fig, axes = plt.subplots(1, 3, figsize=(WIDTH, 2.4), sharex=True)
+    fig, axes = plt.subplots(1, 3, figsize=(WIDTH, 3.4), sharex=True)
+    dashed = (0, (3, 2))
 
     ax = axes[0]
     for v in DIRECT_RANK + REIFIED_RANK:
         kind = 'direct' if v in DIRECT_RANK else 'reified'
         for seed in range(5):
             curve(ax, history(abl / f'{v}_seed{seed}.pt')['val_mrr_position'], RANK_COLOR[kind], alpha=0.45)
-    ax.set_title('(a) Position, $K = 3$, E2 variants')
+    ax.set_title('(a) Position, $K = 3$\n12 E2 graphs')
     ax.set_ylabel('Validation MRR')
+    legend_a = [plt.Line2D([], [], color=RANK_COLOR[k], label=f'{k} rank') for k in ('direct', 'reified')]
 
     ax = axes[1]
     for kg in KGS:
         for seed in range(5):
             curve(ax, history(dep / 'K4' / f'{kg}_seed{seed}.pt')['val_mrr_position'], KG_COLOR[kg], alpha=0.7)
-    ax.set_title('(b) Position, $K = 4$')
+    ax.set_title('(b) Position, $K = 4$\nAd-hoc, Hybrid, Pure SULO')
+    legend_b = [plt.Line2D([], [], color=KG_COLOR[k], label=KG_NAME[k]) for k in KGS]
 
     ax = axes[2]
-    for k, style in [('K3', (0, (3, 2))), ('K4', '-')]:
-        for seed in range(5):
-            curve(ax, history(dep / k / f'pure_sulo_seed{seed}.pt')['val_mrr_team'], KG_COLOR['pure_sulo'],
-                  linestyle=style, alpha=0.8)
     for seed in range(5):
-        curve(ax, history(abl / f'adhoc_seed{seed}.pt')['val_mrr_team'], KG_COLOR['adhoc'], alpha=0.5)
-    ax.set_title('(c) Team')
+        curve(ax, history(abl / f'adhoc_seed{seed}.pt')['val_mrr_team'], KG_COLOR['adhoc'], alpha=0.6)
+        curve(ax, history(dep / 'K3' / f'pure_sulo_seed{seed}.pt')['val_mrr_team'], KG_COLOR['pure_sulo'],
+              linestyle=dashed, alpha=0.5)
+        curve(ax, history(dep / 'K4' / f'pure_sulo_seed{seed}.pt')['val_mrr_team'], KG_COLOR['pure_sulo'],
+              alpha=0.9)
+    ax.set_title('(c) Team\nAd-hoc and Pure SULO')
+    legend_c = [plt.Line2D([], [], color=KG_COLOR['adhoc'], label='Ad-hoc, $K = 3$'),
+                plt.Line2D([], [], color=KG_COLOR['pure_sulo'], linestyle=dashed, label='Pure SULO, $K = 3$'),
+                plt.Line2D([], [], color=KG_COLOR['pure_sulo'], label='Pure SULO, $K = 4$')]
 
     for ax in axes:
         warm_up(ax)
         ax.set_xlabel('Epoch')
         ax.set_xlim(0, 400)
         ax.set_ylim(0, 0.8)
-    handles = [plt.Line2D([], [], color=RANK_COLOR['direct'], label='(a) direct rank'),
-               plt.Line2D([], [], color=RANK_COLOR['reified'], label='(a) reified rank'),
-               plt.Line2D([], [], color=KG_COLOR['adhoc'], label='Ad-hoc'),
-               plt.Line2D([], [], color=KG_COLOR['hybrid_sulo'], label='Hybrid'),
-               plt.Line2D([], [], color=KG_COLOR['pure_sulo'], label='Pure SULO'),
-               plt.Line2D([], [], color=KG_COLOR['pure_sulo'], linestyle=(0, (3, 2)), label='(c) Pure SULO, $K = 3$')]
     fig.tight_layout()
-    fig.legend(handles=handles, loc='lower center', ncol=3, bbox_to_anchor=(0.5, 1.0))
+    fig.subplots_adjust(bottom=0.36)  # room for the per-panel legends, added after the layout
+    for ax, handles in zip(axes, (legend_a, legend_b, legend_c)):
+        ax.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, -0.3), ncol=1, handlelength=2.2)
     save(fig, 'lp_rgcn_val_curves')
 
 
@@ -278,7 +288,9 @@ NC_EVIDENCE_K = {'adhoc': 2, 'hybrid_sulo': 3, 'pure_sulo': 3}
 
 def e3_nc_k_sweep():
     fig, axes = plt.subplots(1, 2, figsize=(WIDTH, 2.5), sharey=True)
+    grid_rule = grid_rule_auc()
     for ax, enc in zip(axes, ENCODERS):
+        frequency_line(ax, grid_rule, label=ax is axes[-1], text='grid only')
         d = pd.read_csv(NP / 'k_sweep' / enc / 'k_sweep_summary.csv')
         for j, kg in enumerate(KGS):
             r = d[d['kg'] == kg].sort_values('K')
@@ -350,7 +362,7 @@ def e3_lp_depth():
         axes[r, 0].set_ylabel(f'{ENC_NAME[enc]}\nTest MRR')
     axes[0, 0].set_ylim(0, 1)
     ring = plt.Line2D([], [], marker='o', markersize=10, markerfacecolor='none', markeredgecolor=INK2,
-                      linestyle='', label='evidence first in reach')
+                      linestyle='', label='key information first in reach')
     kg_legend(fig, extra=[ring])
     save(fig, 'e3_lp_depth')
 
@@ -364,19 +376,23 @@ SESSION_STYLE = {'with': dict(color='#6250d6', marker='o'), 'without': dict(colo
 def e3_position_by_session():
     d = pd.read_csv(LP / 'analysis' / 'position_by_session_per_seed.csv')
     runs = list(dict.fromkeys(d['run']))
-    fig, ax = plt.subplots(figsize=(WIDTH * 0.85, 2.9))
-    for i, run in enumerate(runs):
-        y = len(runs) - 1 - i
-        rows = d[d['run'] == run]
-        ax.plot(rows['with a session position'], np.full(len(rows), y + 0.12), linestyle='', markersize=5,
-                alpha=0.85, markeredgewidth=0, **SESSION_STYLE['with'])
-        ax.plot(rows['without'], np.full(len(rows), y - 0.12), linestyle='', markersize=5,
-                alpha=0.85, markeredgewidth=0, **SESSION_STYLE['without'])
+    fig, axes = plt.subplots(1, 2, figsize=(WIDTH, 2.9), sharey=True, sharex=True)
+    for ax, enc in zip(axes, ENCODERS):
+        part = d[d['encoder'] == enc]
+        for i, run in enumerate(runs):
+            y = len(runs) - 1 - i
+            rows = part[part['run'] == run]
+            ax.plot(rows['with a session position'], np.full(len(rows), y + 0.12), linestyle='', markersize=5,
+                    alpha=0.85, markeredgewidth=0, **SESSION_STYLE['with'])
+            ax.plot(rows['without'], np.full(len(rows), y - 0.12), linestyle='', markersize=5,
+                    alpha=0.85, markeredgewidth=0, **SESSION_STYLE['without'])
+        ax.set_title(f'({"ab"[ENCODERS.index(enc)]}) {ENC_NAME[enc]}')
+        ax.set_xlabel('test MRR, Position target')
+        ax.grid(axis='y', visible=False)
     labels = [r.replace('−', '$-$').replace('Pure,', 'Pure SULO,').replace('K = ', '$K = $')
               .replace('$K = $3', '$K = 3$').replace('$K = $4', '$K = 4$') for r in runs]
-    ax.set_yticks(range(len(runs))[::-1], labels)
-    ax.set_xlabel('R-GCN test MRR, Position target (one dot per seed)')
-    ax.grid(axis='y', visible=False)
+    axes[0].set_yticks(range(len(runs))[::-1], labels)
+    axes[0].set_xlim(0, None)
     handles = [plt.Line2D([], [], linestyle='', markersize=6, label='entries with a session position (1,114)',
                           **SESSION_STYLE['with']),
                plt.Line2D([], [], linestyle='', markersize=6, label='entries without (1,461)',

@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+from scipy.stats import spearmanr
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import Data
 
@@ -78,6 +79,52 @@ def stratified_split(labels: pd.Series, seed=42) -> tuple[list[str], list[str], 
     train, rest, _, y_rest = train_test_split(iris, y, test_size=0.2, stratify=y, random_state=seed)
     val, test = train_test_split(rest, test_size=0.5, stratify=y_rest, random_state=seed)
     return train, val, test
+
+
+def grid_rule_scores(assertions: pd.DataFrame, iris) -> pd.Series:
+    """Single-rule node-prediction baseline: score = -(start grid rank), so a better grid slot
+    scores higher. Reads only hasStartPosition -> Position -> hasRank, never an outcome. An entry
+    without a start position (pit-lane start or missing record) is ranked below every grid slot."""
+    rank_of = assertions[assertions["property"] == "hasRank"].set_index("subject")["value"].astype(int)
+    start = assertions[assertions["property"] == "hasStartPosition"].set_index("subject")["value"]
+    grid = start.map(rank_of).reindex(list(iris))
+    return -grid.fillna(rank_of.max() + 1)
+
+
+def hub_degree_rule_scores(kg_data: "KGData", assertions: pd.DataFrame, iris) -> pd.Series:
+    """Single-rule baseline from an input feature: score = degree, in the masked graph, of the entry's start
+    Position hub (an entry without a start position is ranked last). The hub is one hop from its entries in every
+    KG, so this is what a model can read at K = 1 about the grid without the rank literal."""
+    degree = torch.bincount(kg_data.data.edge_index[1], minlength=kg_data.data.num_nodes)
+    start = assertions[assertions["property"] == "hasStartPosition"].set_index("subject")["value"]
+    hub_degree = start.map(lambda hub: int(degree[kg_data.node_ids[f"<{hub}>"]])).reindex(list(iris))
+    return hub_degree.fillna(-1)
+
+
+def train_point_rate(assertions: pd.DataFrame, labels: pd.Series, train_iris, prop: str) -> pd.Series:
+    """RaceEntry IRI -> share of the training entries with the same `prop` object (hasDriver, hasTeam) that scored
+    points, leaving the entry itself out. NaN where no other training entry shares that object."""
+    obj = assertions[assertions["property"] == prop].set_index("subject")["value"].reindex(labels.index)
+    train = labels.loc[list(train_iris)]
+    points = obj.map(train.groupby(obj.loc[train.index]).sum()).fillna(0)
+    count = obj.map(train.groupby(obj.loc[train.index]).size()).fillna(0)
+    in_train = pd.Series(labels.index.isin(list(train_iris)), index=labels.index).astype(int)
+    points, count = points - labels * in_train, count - in_train
+    return (points / count).where(count > 0)
+
+
+def within_slot_spearman(scores, x, slot, min_size=3) -> float:
+    """Spearman correlation of scores and x inside each slot, averaged with the slot's entry count as weight, so
+    differences between slots do not count. Slots with fewer than min_size complete entries, or where either
+    variable is constant, are skipped: the rank correlation is undefined there."""
+    frame = pd.DataFrame({"s": np.asarray(scores, dtype=float), "x": np.asarray(x, dtype=float),
+                          "slot": np.asarray(slot)}).dropna()
+    rhos, weights = [], []
+    for _, g in frame.groupby("slot"):
+        if len(g) >= min_size and g["s"].nunique() > 1 and g["x"].nunique() > 1:
+            rhos.append(spearmanr(g["s"], g["x"]).statistic)
+            weights.append(len(g))
+    return float(np.average(rhos, weights=weights))
 
 
 def swap_units(base: Schema, donor: Schema, units) -> Schema:

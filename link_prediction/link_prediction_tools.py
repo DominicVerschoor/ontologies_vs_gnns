@@ -265,18 +265,24 @@ def evaluate_lp(model, lp: LPData, split: str) -> dict:
     return metrics
 
 
-def frequency_baseline(lp: LPData, split: str) -> dict:
-    """
-    evaluate_lp's metrics for ranking every candidate by how often it answers the target in the
-    races before `split` (ties count as the mean rank): the best a model can do when the graph
-    says nothing about a query, i.e. the chance level of the shuffled-answer canary.
-    """
+def frequency_ranks(lp: LPData, split: str) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+    """Per target, query_ranks' (head node id, rank) for ranking every candidate by how often it answers the
+    target in the races before `split` (ties count as the mean rank)."""
     s = SPLITS.index(split)
     ranks = {}
     for name, t in lp.targets.items():
         known, on = lp.race_split[t.race] < s, lp.race_split[t.race] == s
         counts = torch.bincount(t.answer[known], minlength=len(t.candidates)).float()
-        ranks[name] = rank_of_answer(counts.expand(int(on.sum()), -1), t.answer[on])
+        ranks[name] = (t.head[on], rank_of_answer(counts.expand(int(on.sum()), -1), t.answer[on]))
+    return ranks
+
+
+def frequency_baseline(lp: LPData, split: str) -> dict:
+    """
+    evaluate_lp's metrics for frequency_ranks: the best a model can do when the graph says nothing
+    about a query, i.e. the chance level of the shuffled-answer canary.
+    """
+    ranks = {name: r for name, (_, r) in frequency_ranks(lp, split).items()}
     metrics = {name: ranking_metrics(r) for name, r in ranks.items()}
     metrics['pooled'] = ranking_metrics(torch.cat(list(ranks.values())))
     return metrics
@@ -807,3 +813,33 @@ def baseline_hits_at_1(assertions: pd.DataFrame, split: tuple[list[str], list[st
         "position": float((grid["quali"].fillna(grid_rule) == grid["position"]).mean()),
         "circuit": float((circuit_rule == circuit["circuit"]).mean()),
     }
+
+
+def driver_slot_ranks(assertions: pd.DataFrame, split: tuple[list[str], list[str], list[str]]) -> pd.Series:
+    """
+    Test Position query (entry IRI) -> rank of its true grid slot under a driver-history rule that sees the
+    train + val races only and never a session: every Position is scored by how often the driver started from it
+    in the same season, ties broken by the driver's count over all seasons, then by the overall count. Remaining
+    ties use rank_of_answer's mean rank.
+    """
+    value = lambda prop: assertions[assertions["property"] == prop].set_index("subject")["value"]
+    entries = pd.DataFrame({"race": assertions[assertions["property"] == "hasRaceEntry"].set_index("value")["subject"]})
+    entries["season"] = entries["race"].map(value("partOfSeason"))
+    entries["driver"] = value("hasDriver")
+    entries["position"] = value("hasStartPosition")
+    entries = entries.dropna(subset=["position"])
+    known = entries[entries["race"].isin(set(split[0]) | set(split[1]))]
+    test = entries[entries["race"].isin(set(split[2]))]
+    candidates = sorted(assertions.loc[assertions["subject_class"] == "Position", "subject"].unique())
+
+    def counts(keys):
+        """(keys..., position) -> count over the known races, as a query x candidate matrix."""
+        table = known.groupby(keys + ["position"]).size().unstack(fill_value=0).reindex(columns=candidates, fill_value=0)
+        return torch.tensor(test[keys].join(table, on=keys)[candidates].fillna(0).to_numpy(), dtype=torch.float64)
+
+    overall = torch.tensor(known["position"].value_counts().reindex(candidates, fill_value=0).to_numpy(),
+                           dtype=torch.float64)
+    base = float(len(known)) + 1          # > every count, so the three counts order lexicographically
+    scores = counts(["driver", "season"]) * base ** 2 + counts(["driver"]) * base + overall
+    answer = torch.tensor([candidates.index(p) for p in test["position"]])
+    return pd.Series(rank_of_answer(scores, answer).numpy(), index=test.index, name="rank")

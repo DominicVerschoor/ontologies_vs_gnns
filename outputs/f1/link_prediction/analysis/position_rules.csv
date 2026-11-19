@@ -1,0 +1,9 @@
+,all,with a session position,without
+frequency baseline,0.165,0.172,0.16
+driver-history rule,0.306,0.336,0.283
+"R-GCN: Ad-hoc, K = 3",0.409,0.616,0.251
+"R-GCN: Hybrid, K = 3",0.274,0.301,0.253
+"R-GCN: Pure, K = 3",0.241,0.262,0.225
+"GraphSAGE: Ad-hoc, K = 3",0.245,0.27,0.227
+"GraphSAGE: Hybrid, K = 3",0.251,0.276,0.232
+"GraphSAGE: Pure, K = 3",0.189,0.202,0.179

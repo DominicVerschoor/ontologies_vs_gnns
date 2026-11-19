@@ -11,7 +11,7 @@ from f1_node_data import ABLATION_VARIANTS, ablation_schema, degree_feature
 from f1_population import NS, render_ntriples
 from link_prediction import link_prediction_tools as lpt
 from link_prediction.link_prediction_tools import (
-    LP_ABLATION_METRICS, MASKED_PROPERTIES, TARGETS, LinkPredictor, LPData, TargetData, _cascade, _majority, baseline_hits_at_1,
+    LP_ABLATION_METRICS, MASKED_PROPERTIES, TARGETS, LinkPredictor, LPData, TargetData, _cascade, _majority, baseline_hits_at_1, driver_slot_ranks,
     EVIDENCE_CHAINS, SPLITS, build_lp_data, evaluate_lp, evidence_hops, hidden_edges, query_ranks, race_split,
     rank_of_answer, ranking_metrics, session_position_entries, target_facts, train_lp_model, visible_graph,
 )
@@ -543,3 +543,44 @@ def test_session_position_entries_need_a_session_with_a_position():
     assert session_position_entries(assertions) == {"E1", "E2"}
     assert session_position_entries(assertions, "Qualifying") == {"E1"}
     assert session_position_entries(assertions, "FP1") == set()
+
+
+# ── Driver-history Position rule (post-hoc analysis) ──────────────────────
+
+def _slot_assertions(entries):
+    """entries: (entry, race, season, driver, slot); Positions P1-P4."""
+    rows = []
+    for entry, race, season, driver, slot in entries:
+        rows += [(race, "Race", "hasRaceEntry", entry), (race, "Race", "partOfSeason", season),
+                 (entry, "RaceEntry", "hasDriver", driver), (entry, "RaceEntry", "hasStartPosition", slot)]
+    rows += [(f"P{n}", "Position", "hasRank", str(n)) for n in range(1, 5)]
+    return pd.DataFrame(rows, columns=["subject", "subject_class", "property", "value"]).drop_duplicates()
+
+
+SLOT_ENTRIES = [
+    ("e1", "R1", "S1", "d1", "P2"), ("e2", "R2", "S1", "d1", "P2"),                                      # same season
+    ("e4", "R4", "S0", "d1", "P1"), ("e5", "R5", "S0", "d1", "P1"), ("e6", "R6", "S0", "d1", "P1"),     # earlier
+    ("t1", "R3", "S1", "d1", "P2"), ("t2", "R3", "S1", "d2", "P3"), ("t3", "R3", "S1", "d3", "P1"),
+    ("t4", "R3", "S1", "d4", "P4"),
+]
+SLOT_SPLIT = (["R1", "R4", "R5", "R6"], ["R2"], ["R3"])
+
+
+def test_driver_slot_rule_prefers_the_same_season_then_all_seasons_then_overall():
+    ranks = driver_slot_ranks(_slot_assertions(SLOT_ENTRIES), SLOT_SPLIT)
+    assert sorted(ranks.index) == ["t1", "t2", "t3", "t4"]          # test races only
+    assert ranks["t1"] == 1          # d1's slot this season (P2 x2) beats its all-season majority (P1 x3)
+    assert ranks["t3"] == 1          # no history: overall counts, P1 (3) > P2 (2) > P3 = P4 (0)
+    assert ranks["t2"] == ranks["t4"] == 3.5    # P3 and P4 tie at 0: mean of ranks 3 and 4
+
+
+def test_driver_slot_rule_never_counts_test_races():
+    moved = [e if e[0] != "t3" else ("t3", "R3", "S1", "d3", "P4") for e in SLOT_ENTRIES]
+    # A test entry now also starts from P4; P3 and P4 still tie at 0 known starts.
+    assert driver_slot_ranks(_slot_assertions(moved), SLOT_SPLIT)["t2"] == 3.5
+
+
+def test_driver_slot_rule_uses_its_driver_over_all_seasons_without_a_same_season_start():
+    later = SLOT_ENTRIES + [("t5", "R7", "S2", "d1", "P1")]    # d1 has no known start in season S2
+    ranks = driver_slot_ranks(_slot_assertions(later), (SLOT_SPLIT[0], SLOT_SPLIT[1], ["R3", "R7"]))
+    assert ranks["t5"] == 1          # d1 over all seasons: P1 (3) > P2 (2)
